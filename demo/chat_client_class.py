@@ -3,6 +3,7 @@ import sys
 from chat_utils import *
 import client_state_machine as csm
 from GUI import *
+#你好
 
 class Client:
     def __init__(self, args):
