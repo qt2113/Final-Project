@@ -3,11 +3,13 @@ import sys
 from chat_utils import *
 import client_state_machine as csm
 from GUI import *
+from Chatbot_client import ChatBotClient
 #你好
 
 class Client:
     def __init__(self, args):
         self.args = args
+        self.chatbot = ChatBotClient(name="TomAI", model='gemma3') 
 
     def quit(self):
         self.socket.shutdown(socket.SHUT_RDWR)
@@ -18,7 +20,7 @@ class Client:
         svr = SERVER if self.args.d == None else (self.args.d, CHAT_PORT)
         self.socket.connect(svr)
         self.sm = csm.ClientSM(self.socket)
-        self.gui = GUI(self.send, self.recv, self.sm, self.socket)
+        self.gui = GUI(self.send, self.recv, self.sm, self.socket, self.chatbot)
 
     def shutdown_chat(self):
         return
@@ -34,3 +36,13 @@ class Client:
         self.gui.run()
         print("gui is off")
         self.quit()
+
+if __name__ == '__main__':
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Chat Client')
+    parser.add_argument('-d', type=str, default=None, help='server IP addr')
+    args = parser.parse_args()
+    
+    client = Client(args)
+    client.run_chat()

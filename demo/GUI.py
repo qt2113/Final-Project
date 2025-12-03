@@ -14,11 +14,12 @@ from tkinter import font
 from tkinter import ttk
 from chat_utils import *
 import json
+import time
 
 # GUI class for the chat
 class GUI:
     # constructor method
-    def __init__(self, send, recv, sm, s):
+    def __init__(self, send, recv, sm, s, chatbot):
         # chat window which is currently hidden
         self.Window = Tk()
         self.Window.withdraw()
@@ -28,6 +29,7 @@ class GUI:
         self.socket = s
         self.my_msg = ""
         self.system_msg = ""
+        self.chatbot = chatbot
 
     def login(self):
         # login window
@@ -78,7 +80,7 @@ class GUI:
           
         self.go.place(relx = 0.4,
                       rely = 0.55)
-        self.Window.mainloop()
+        #self.Window.mainloop()
   
     def goAhead(self, name):
         if len(name) > 0:
@@ -201,22 +203,46 @@ class GUI:
     def proc(self):
         # print(self.msg)
         while True:
+            time.sleep(0.1)
             read, write, error = select.select([self.socket], [], [], 0)
             peer_msg = []
             # print(self.msg)
             if self.socket in read:
                 peer_msg = self.recv()
+
+            bot_response = None
+            if len(self.my_msg) > 0 and self.my_msg.startswith("/ai "):
+                # 1. 提取用户对 Chatbot 的问题
+                user_query = self.my_msg[4:] # 截取掉 "/ai "
+                
+                # 2. 调用 Chatbot 实例的 chat 方法
+                try:
+                    # 在此处可以添加 UI 提示，例如“正在思考...”
+                    bot_response = self.chatbot.chat(user_query)
+                    
+                    # 3. 将用户消息和 Chatbot 响应格式化并显示在 self.system_msg 中
+                    self.system_msg += f"[我] 对 TomAI 说: {user_query}\n"
+                    self.system_msg += f"[TomAI]: {bot_response}\n"
+
+                except Exception as e:
+                    self.system_msg += f"[系统错误] Chatbot 失败: {e}\n"
+                
+                self.my_msg = ""
+
             if len(self.my_msg) > 0 or len(peer_msg) > 0:
                 # print(self.system_msg)
-                self.system_msg += self.sm.proc(self.my_msg, peer_msg)
+                if len(self.my_msg) > 0 or len(peer_msg) > 0:
+                    self.system_msg += self.sm.proc(self.my_msg, peer_msg)
                 self.my_msg = ""
                 self.textCons.config(state = NORMAL)
                 self.textCons.insert(END, self.system_msg +"\n\n")      
                 self.textCons.config(state = DISABLED)
+                self.system_msg = ""
                 self.textCons.see(END)
 
     def run(self):
         self.login()
+        self.Window.mainloop()
 # create a GUI class object
 if __name__ == "__main__": 
     g = GUI()

@@ -24,6 +24,7 @@ class Server:
         self.group = grp.Group()
         #start server
         self.server=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server.bind(SERVER)
         self.server.listen(5)
         self.all_sockets.append(self.server)
@@ -33,7 +34,8 @@ class Server:
         # self.sonnet_f = open('AllSonnets.txt.idx', 'rb')
         # self.sonnet = pkl.load(self.sonnet_f)
         # self.sonnet_f.close()
-        self.sonnet = indexer.PIndex("AllSonnets.txt")
+        #self.sonnet = indexer.PIndex("AllSonnets.txt")
+
     def new_client(self, sock):
         #add to all sockets and to new clients
         print('new client...')

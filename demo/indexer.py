@@ -51,9 +51,10 @@ class Index:
 class PIndex(Index):
     def __init__(self, name):
         super().__init__(name)
-        roman_int_f = open('roman.txt.pk', 'rb')
-        self.int2roman = pickle.load(roman_int_f)
-        roman_int_f.close()
+        # roman_int_f = open('roman.txt.pk', 'rb')
+        # self.int2roman = pickle.load(roman_int_f)
+        # roman_int_f.close() #感觉对final project没什么影响
+        self.int2roman = {i: str(i) for i in range(1, 155)} 
         self.load_poems()
         
         # load poems
