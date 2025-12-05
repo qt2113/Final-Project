@@ -217,7 +217,6 @@ class GUI:
           
         self.textCons.config(cursor = "arrow")
 
-        # 在 layout() 的按钮区添加（放在 Send 按钮附近）
         self.btnAI = Button(self.labelBottom,
                             text="AI Chat",
                             font="Helvetica 10 bold",
@@ -225,7 +224,6 @@ class GUI:
                             fg="white",
                             command=self.open_ai_window)
         self.btnAI.place(relx=0.53, rely=0.008, relheight=0.06, relwidth=0.22)
-        # 调整 Send 按钮 relx 如果需要，避免覆盖
 
           
         # create a scroll bar
@@ -479,23 +477,18 @@ class GUI:
                     pass
 
             bot_response = None
-            if len(self.my_msg) > 0 and self.my_msg.startswith("/ai "):
-                # 1. 提取用户对 Chatbot 的问题
-                user_query = self.my_msg[4:] # 截取掉 "/ai "
+            if "@AI_bot" in self.my_msg:
+                parts = self.my_msg.split("@AI_bot", 1)
+                query = parts[1].strip() if len(parts) > 1 else ""
                 
-                # 2. 调用 Chatbot 实例的 chat 方法
-                try:
-                    # 在此处可以添加 UI 提示，例如“正在思考...”
-                    bot_response = self.chatbot.chat(user_query)
-                    
-                    # 3. 将用户消息和 Chatbot 响应格式化并显示在 self.system_msg 中
-                    self.system_msg += f"[我] 对 TomAI 说: {user_query}\n"
-                    self.system_msg += f"[TomAI]: {bot_response}\n"
-
-                except Exception as e:
-                    self.system_msg += f"[系统错误] Chatbot 失败: {e}\n"
-                
-                self.my_msg = ""
+                if query:  # 有问题才发
+                    mysend(self.socket, json.dumps({
+                        "action": "ai_query",
+                        "query": query
+                    }))
+                    self.my_msg = self.my_msg.replace("@AI_bot", "", 1).strip()                   
+                else:
+                    pass
 
             if len(self.my_msg) > 0 or len(peer_msg) > 0:
                 # print(self.system_msg)

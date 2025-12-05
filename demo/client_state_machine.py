@@ -83,7 +83,7 @@ class ClientSM:
                     self.out_msg += 'Here are all the users in the system:\n'
                     self.out_msg += logged_in
 
-                elif my_msg[0] == 'c':
+                elif my_msg[0] == '@':
                     peer = my_msg[1:]
                     peer = peer.strip()
                     if self.connect_to(peer) == True:

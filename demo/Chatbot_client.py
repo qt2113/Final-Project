@@ -1,33 +1,3 @@
-# from ollama import chat
-# from ollama import ChatResponse
-
-# def chat_with_llm():
-#     message_history = []
-#     print("Welcome to the LLM chat interface. Type your messages below.")
-
-#     while True:
-#         user_input = str(input("Enter your message: "))
-
-#         if user_input.lower() in ['exit', 'quit']:
-#             print("Exiting the chat. Goodbye!")
-#             break
-#         if not user_input.strip():
-#             print("Please enter a valid message.")
-#             continue
-
-#         llm_response: ChatResponse = chat(model='gemma3', messages=[
-#         {
-#             'role': 'user',
-#             'content': user_input,
-#         },
-#         ])
-#         print(llm_response['message']['content'])
-#         # or access fields directly from the response object
-#         #print(llm_response.message.content) 
-
-# if __name__ == "__main__":
-#     chat_with_llm()
-
 from ollama import Client
 from openai import OpenAI
 
@@ -71,30 +41,56 @@ class ChatBotClient():
 
 
 class ChatBotClientOpenAI():
-    def __init__(self, name="3po", model="gemma3", host='http://localhost:11434', headers={'x-some-header': 'some-value'}):
-        self.host = host
+    def __init__(self, name="TomAI", host='http://10.209.93.21:8000/v1'):
         self.name = name
-        self.model = model
-        self.client = OpenAI(api_key="EMPTY", base_url="http://10.209.93.21:8000/v1")  # use other port if necessary
-        self.messages = []
-
-    def chat(self, messages):
-        model_id = "/home/nlp/.cache/huggingface/hub/models--Qwen--Qwen2.5-0.5B-Instruct/snapshots/7ae557604adf67be50417f59c2c2f167def9a775"
-        # Example system prompt (commented out):
-        # messages = [
-        #     {"role": "system", "content": f"Enter role play mode. You are {self.name}, a professional academic advisor at NYU Shanghai. Reply warmly, within 20 words."},
-        #     {"role": "user", "content": query + "/no_think"},
-        # ]
-
-        response = self.client.chat.completions.create(
-            messages=messages,
-            model=model_id,
-            temperature=0.3,
+        self.host = host
+        
+        self.client = OpenAI(
+            api_key="EMPTY",
+            base_url=self.host
         )
-        return response.choices[0].message.content
-    
+        
+        self.model_id = "/home/nlp/.cache/huggingface/hub/models--Qwen--Qwen2.5-0.5B-Instruct/snapshots/7ae557604adf67be50417f59c2c2f167def9a775"
+        
+        self.messages = [
+            {"role": "system", "content": f"You are {name}, a friendly and patient Python programming teaching assistant. "
+                                          "Use Chinese when user speaks Chinese, English otherwise. Be concise and helpful."}
+        ]
 
+    def chat(self, message: str):
+        self.messages.append({"role": "user", "content": message})
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_id,
+                messages=self.messages,
+                temperature=0.7,
+                max_tokens=800
+            )
+            reply = response.choices[0].message.content.strip()
+            self.messages.append({"role": "assistant", "content": reply})
+            return reply
+        except Exception as e:
+            raise Exception(f"调用服务器失败: {e}")
+
+    def stream_chat(self, message: str):
+        self.messages.append({"role": "user", "content": message})
+        stream = self.client.chat.completions.create(
+            model=self.model_id,
+            messages=self.messages,
+            stream=True
+        )
+        answer = ""
+        for chunk in stream:
+            if chunk.choices[0].delta.content is not None:
+                piece = chunk.choices[0].delta.content
+                print(piece, end="", flush=True)
+                answer += piece
+        print()
+        self.messages.append({"role": "assistant", "content": answer})
+        return answer
+    
 if __name__ == "__main__":
-    c = ChatBotClient()
+    c = ChatBotClientOpenAI()
     print(c.chat("Your name is Tom, and you are the learning assistant of Python programming."))
     print(c.stream_chat("What's your name and role?"))

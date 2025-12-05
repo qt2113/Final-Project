@@ -14,6 +14,7 @@ import json
 import pickle as pkl
 from chat_utils import *
 import chat_group as grp
+from Chatbot_client import ChatBotClientOpenAI
 
 class Server:
     def __init__(self):
@@ -35,7 +36,18 @@ class Server:
         # self.sonnet = pkl.load(self.sonnet_f)
         # self.sonnet_f.close()
         #self.sonnet = indexer.PIndex("AllSonnets.txt")
+        self.tom_ai = ChatBotClientOpenAI()   
+        self.ai_name = "TomAI"
+        self.logged_name2sock[self.ai_name] = None       
+        self.logged_sock2name[None] = self.ai_name      
+        print("TomAI has joined the chat system.")
 
+    def call_remote_ai(self, query):
+            try:
+                return self.tom_ai.chat(query)
+            except Exception as e:
+                return f"TomAI 暂时开小差了～ {e}"
+            
     def new_client(self, sock):
         #add to all sockets and to new clients
         print('new client...')
@@ -207,14 +219,34 @@ class Server:
 #==============================================================================
             elif msg["action"] == "exchange":
                 from_name = self.logged_sock2name[from_sock]
-                the_guys = self.group.list_me(from_name)
-                #said = msg["from"]+msg["message"]
+                the_guys = self.group.list_me(from_name)   # 群内所有成员（含自己）
+
+                # 格式化消息
                 said2 = text_proc(msg["message"], from_name)
-                self.indices[from_name].add_msg_and_index(said2)
-                for g in the_guys[1:]:
+
+                # ===== 1. AI 不写入聊天记录 =====
+                if from_name != "TomAI":
+                    self.indices[from_name].add_msg_and_index(said2)
+
+                # ===== 2. 向群组其他成员广播 =====
+                for g in the_guys:
+                    if g == from_name:
+                        continue  # 发消息的人不重复写
+                    if g == "TomAI":
+                        continue  # AI 不需要写 index、自身也不接收
+
+                    # 写入对方 index
+                    if g in self.indices:
+                        self.indices[g].add_msg_and_index(said2)
+
+                    # 发送给对方
                     to_sock = self.logged_name2sock[g]
-                    self.indices[g].add_msg_and_index(said2)
-                    mysend(to_sock, json.dumps({"action":"exchange", "from":msg["from"], "message":msg["message"]}))
+                    mysend(to_sock, json.dumps({
+                        "action": "exchange",
+                        "from": msg["from"],
+                        "message": msg["message"]
+                    }))
+
 #==============================================================================
 #                 listing available peers
 #==============================================================================
@@ -258,25 +290,19 @@ class Server:
                 from_name = self.logged_sock2name[from_sock]
                 target = msg["target"]
 
-                # 必须是在线用户
                 if not self.group.is_member(target):
                     mysend(from_sock, json.dumps({"action": "add", "status": "no-user"}))
                     return
 
-                # 找 from_name 所在的 group
                 found, group_key = self.group.find_group(from_name)
-
-                # 还没在群 → 先创建一个
                 if not found:
                     self.group.connect(from_name, target)
                     mysend(from_sock, json.dumps({"action": "add", "status": "created"}))
                     return
 
-                # 已有群 → 加入
                 if target not in self.group.chat_grps[group_key]:
                     self.group.chat_grps[group_key].append(target)
 
-                # 广播加入消息
                 for member in self.group.chat_grps[group_key]:
                     if member != target:
                         sock_m = self.logged_name2sock[member]
@@ -286,7 +312,6 @@ class Server:
                             "from": target
                         }))
 
-                # 通知被邀请者
                 to_sock = self.logged_name2sock[target]
                 mysend(to_sock, json.dumps({
                     "action": "connect",
@@ -294,6 +319,41 @@ class Server:
                     "from": from_name
                 }))
     
+#==============================================================================
+#                 AI query
+#==============================================================================
+            elif msg["action"] == "ai_query":
+                from_name = self.logged_sock2name[from_sock]
+                query = msg["query"]
+
+                # ===== 关键：自动把 TomAI 拉进当前群聊（只拉一次）=====
+                in_group, group_key = self.group.find_group(from_name)
+                if in_group and "TomAI" not in self.group.chat_grps[group_key]:
+                    self.group.chat_grps[group_key].append("TomAI")
+                    print(f"TomAI 已被 {from_name} 召唤进入群聊")
+                    for member in self.group.chat_grps[group_key]:
+                        if member != "TomAI" and self.logged_name2sock[member] is not None:
+                            mysend(self.logged_name2sock[member], json.dumps({
+                                "action": "connect",
+                                "status": "success",      
+                                "from": "TomAI"           
+                            }))
+
+                # 调用 AI
+                reply = self.call_remote_ai(query)
+
+                # 广播给当前群聊的所有人（包括提问者自己）
+                the_guys = self.group.list_me(from_name)  # 包含 TomAI
+                for g in the_guys:
+                    if g == "TomAI":
+                        continue  # 机器人自己不需要收到消息
+                    to_sock = self.logged_name2sock[g]
+                    mysend(to_sock, json.dumps({
+                        "action": "exchange",
+                        "from": "[TomAI]",
+                        "message": reply
+                    }))
+
 #==============================================================================
 # the "from" guy has had enough (talking to "to")!
 #==============================================================================
