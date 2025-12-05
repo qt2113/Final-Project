@@ -27,11 +27,20 @@ class ClientSM:
         return self.me
 
     def connect_to(self, peer):
+        # group chat
+        if peer.upper() == "ALL":
+            msg = json.dumps({"action": "connect", "target": "ALL"})
+            mysend(self.s, msg)
+            self.peer = "ALL"
+            self.out_msg += "You are now creating a group chat...\n"
+            return True
+        # one-on-one chat
         msg = json.dumps({"action":"connect", "target":peer})
         mysend(self.s, msg)
         response = json.loads(myrecv(self.s))
         if response["status"] == "success":
             self.peer = peer
+            self.state = S_CHATTING
             self.out_msg += 'You are connected with '+ self.peer + '\n'
             return (True)
         elif response["status"] == "busy":
@@ -127,14 +136,31 @@ class ClientSM:
                     self.disconnect()
                     self.state = S_LOGGEDIN
                     self.peer = ''
+                if len(my_msg) > 0 and my_msg != "bye":
+                    # 自己发送的消息也要显示
+                    self.out_msg += "[" + self.me + "] " + my_msg + "\n"
+                if my_msg.startswith("add "):
+                    new_user = my_msg[4:].strip()
+                    mysend(self.s, json.dumps({"action": "add", "target": new_user}))
+                    return ""
+
             if len(peer_msg) > 0:    # peer's stuff, coming in
                 peer_msg = json.loads(peer_msg)
-                if peer_msg["action"] == "connect":
-                    self.out_msg += "(" + peer_msg["from"] + " joined)\n"
+                # if peer_msg["action"] == "connect":
+                #     self.out_msg += "(" + peer_msg["from"] + " joined)\n"
+                # elif peer_msg["action"] == "disconnect":
+                #     self.state = S_LOGGEDIN
+                # else:
+                #     self.out_msg += peer_msg["from"] + peer_msg["message"]
+                if peer_msg["action"] == "connect" and peer_msg.get("status")=="request":
+                    self.out_msg += f"({peer_msg['from']} joined the chat)\n"
+
+                # 普通聊天消息（群聊/单聊都适用）
+                elif peer_msg["action"] == "exchange":
+                    self.out_msg += peer_msg["from"] + peer_msg["message"]
+
                 elif peer_msg["action"] == "disconnect":
                     self.state = S_LOGGEDIN
-                else:
-                    self.out_msg += peer_msg["from"] + peer_msg["message"]
 
 
             # Display the menu again

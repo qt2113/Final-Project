@@ -13,4 +13,7 @@ start "Client A" cmd /k "python chat_client_class.py"
 :: 3. 启动第二个客户端 (Bob)
 start "Client B" cmd /k "python chat_client_class.py"
 
+:: 4. 启动第三个客户端 (test user)
+start "Client C" cmd /k "python chat_client_class.py"
+
 echo All systems running.

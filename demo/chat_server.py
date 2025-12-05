@@ -168,6 +168,26 @@ class Server:
             if msg["action"] == "connect":
                 to_name = msg["target"]
                 from_name = self.logged_sock2name[from_sock]
+                # ===== 群聊：connect ALL =====
+                if to_name == "ALL":
+                    print("Group chat requested by", from_name)
+                    self.group.connect_all()
+
+                    # 给所有人广播：群聊创建
+                    for user, sock in self.logged_name2sock.items():
+                        mysend(sock, json.dumps({
+                            "action": "connect",
+                            "status": "group-created",
+                            "from": from_name
+                        }))
+
+                    # 给请求者返回成功
+                    mysend(from_sock, json.dumps({
+                        "action": "connect",
+                        "status": "success"
+                    }))
+                    return
+                # ===== 个人私聊 =====
                 if to_name == from_name:
                     msg = json.dumps({"action":"connect", "status":"self"})
                 # connect to the peer
@@ -230,6 +250,50 @@ class Server:
                 search_rslt = '\n'.join([x[-1] for x in self.indices[from_name].search(term)])
                 print('server side search: ' + search_rslt)
                 mysend(from_sock, json.dumps({"action":"search", "results":search_rslt}))
+
+#==============================================================================
+#                 add a new member to my group
+#==============================================================================
+            elif msg["action"] == "add":
+                from_name = self.logged_sock2name[from_sock]
+                target = msg["target"]
+
+                # 必须是在线用户
+                if not self.group.is_member(target):
+                    mysend(from_sock, json.dumps({"action": "add", "status": "no-user"}))
+                    return
+
+                # 找 from_name 所在的 group
+                found, group_key = self.group.find_group(from_name)
+
+                # 还没在群 → 先创建一个
+                if not found:
+                    self.group.connect(from_name, target)
+                    mysend(from_sock, json.dumps({"action": "add", "status": "created"}))
+                    return
+
+                # 已有群 → 加入
+                if target not in self.group.chat_grps[group_key]:
+                    self.group.chat_grps[group_key].append(target)
+
+                # 广播加入消息
+                for member in self.group.chat_grps[group_key]:
+                    if member != target:
+                        sock_m = self.logged_name2sock[member]
+                        mysend(sock_m, json.dumps({
+                            "action": "connect",
+                            "status": "success",
+                            "from": target
+                        }))
+
+                # 通知被邀请者
+                to_sock = self.logged_name2sock[target]
+                mysend(to_sock, json.dumps({
+                    "action": "connect",
+                    "status": "request",
+                    "from": from_name
+                }))
+    
 #==============================================================================
 # the "from" guy has had enough (talking to "to")!
 #==============================================================================

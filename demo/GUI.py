@@ -216,6 +216,17 @@ class GUI:
                              relwidth = 0.22)
           
         self.textCons.config(cursor = "arrow")
+
+        # 在 layout() 的按钮区添加（放在 Send 按钮附近）
+        self.btnAI = Button(self.labelBottom,
+                            text="AI Chat",
+                            font="Helvetica 10 bold",
+                            bg="#2E86C1",
+                            fg="white",
+                            command=self.open_ai_window)
+        self.btnAI.place(relx=0.53, rely=0.008, relheight=0.06, relwidth=0.22)
+        # 调整 Send 按钮 relx 如果需要，避免覆盖
+
           
         # create a scroll bar
         scrollbar = Scrollbar(self.textCons)
@@ -228,6 +239,26 @@ class GUI:
         scrollbar.config(command = self.textCons.yview)
           
         self.textCons.config(state = DISABLED)
+
+        # ==== 群聊按钮 ====
+        self.btnGroup = Button(
+            self.labelBottom,
+            text="Group Chat",
+            font="Helvetica 10 bold",
+            bg="#6C3483",
+            fg="white",
+            command=self.group_chat
+        )
+        self.btnGroup.place(relx=0.77, rely=0.08, relheight=0.05, relwidth=0.22)
+
+    def group_chat(self):
+        """Enter group chat with ALL online users."""
+        msg = json.dumps({
+            "action": "connect",
+            "target": "ALL"
+        })
+        self.send(msg)
+
   
     # function to basically start the thread for sending messages
     def sendButton(self, msg):
@@ -265,6 +296,119 @@ class GUI:
         """在主线程执行的登录失败回调"""
         messagebox.showerror("Login failed", reason)
 
+    # ===========================
+    #   AI ChatBot 独立窗口函数
+    # ===========================
+
+    def open_ai_window(self):
+        # 如果窗口已存在，则抬到前面
+        if hasattr(self, "ai_win") and self.ai_win.winfo_exists():
+            self.ai_win.lift()
+            return
+
+        self.ai_win = Toplevel(self.Window)
+        self.ai_win.title("Chat with TomAI")
+        self.ai_win.geometry("520x560")
+        self.ai_win.configure(bg="#1C2833")
+
+        # ====== 1. 上方聊天显示区 ======
+        self.ai_text = Text(
+            self.ai_win,
+            state=DISABLED, wrap=WORD,
+            bg="#17202A", fg="#EAECEE",
+            font="Helvetica 13", relief=FLAT
+        )
+        self.ai_text.pack(fill=BOTH, expand=True, padx=8, pady=(8, 0))
+
+        # ====== 2. 人格选择区 ======
+        persona_frame = Frame(self.ai_win, bg="#1C2833")
+        persona_frame.pack(fill=X, padx=8, pady=(6, 6))
+
+        Label(
+            persona_frame, text="AI Personality:",
+            fg="white", bg="#1C2833",
+            font="Helvetica 10 bold"
+        ).pack(side=LEFT, padx=(0, 6))
+
+        self.persona_box = ttk.Combobox(
+            persona_frame,
+            values=[
+                "You are a friendly Python tutor.",
+                "You are a strict professor who answers concisely.",
+                "You are a humorous chatbot who jokes while answering.",
+                "You are a poetic assistant who replies like a poem.",
+            ],
+            font="Helvetica 10",
+            state="readonly"
+        )
+        self.persona_box.set("You are a friendly Python tutor.")
+        self.persona_box.pack(side=LEFT, fill=X, expand=True)
+
+        # ====== 3. 输入框 + 发送按钮区域 ======
+        bottom = Frame(self.ai_win, bg="#1C2833")
+        bottom.pack(fill=X, padx=8, pady=(0, 10))
+
+        # 输入框
+        self.ai_entry = Entry(
+            bottom,
+            font="Helvetica 12",
+            bg="#2C3E50", fg="white",
+            relief=FLAT
+        )
+        self.ai_entry.pack(side=LEFT, fill=X, expand=True, padx=(0, 10))
+        self.ai_entry.bind("<Return>", lambda e: self.ai_send_button())
+
+        # 发送按钮
+        Button(
+            bottom,
+            text="Send",
+            command=self.ai_send_button,
+            bg="#566573", fg="#FDFEFE",
+            font="Helvetica 10 bold",
+            relief=GROOVE
+        ).pack(side=RIGHT)
+
+
+    def ai_send_button(self):
+        text = self.ai_entry.get().strip()
+        if not text:
+            return
+
+        self._ai_append(f"[You] {text}")
+        self.ai_entry.delete(0, END)
+
+        # 异步防卡死
+        import threading
+        threading.Thread(
+            target=self._ai_call_and_display,
+            args=(text,),
+            daemon=True
+        ).start()
+
+
+    def _ai_append(self, msg):
+        """线程安全地往 AI 文本区域写入"""
+        def append():
+            self.ai_text.config(state=NORMAL)
+            self.ai_text.insert(END, msg + "\n")
+            self.ai_text.see(END)
+            self.ai_text.config(state=DISABLED)
+        self.ai_text.after(0, append)
+
+
+    def _ai_call_and_display(self, user_text):
+        try:
+            # ⭐ 每次对话前重置人格 System prompt
+            persona = self.persona_box.get()
+            self.chatbot.messages = [{"role": "system", "content": persona}]
+
+            reply = self.chatbot.chat(user_text)
+            self._ai_append(f"[TomAI] {reply}")
+
+        except Exception as e:
+            self._ai_append(f"[系统错误] Chatbot 调用失败: {e}")
+
+    
     def goAhead_blocking_alternative(self):
         """
         (保留，不被使用) 如果将来需要短超时的同步方式，可以实现 select + 非阻塞 recv。
@@ -316,6 +460,23 @@ class GUI:
             # print(self.msg)
             if self.socket in read:
                 peer_msg = self.recv()
+                try:
+                    msg = json.loads(peer_msg)
+
+                    # 群聊被创建（来自 server）
+                    if msg.get("action") == "connect" and msg.get("status") == "group-created":
+                        self.system_msg += f"*** Group created. Creator: {msg.get('from')} ***\n"
+
+                    # 有人加入群聊
+                    if msg.get("action") == "connect" and msg.get("status") == "success":
+                        self.system_msg += f"*** Join the group ***\n"
+
+                    # 有人向我发起连接请求（两人模式）
+                    if msg.get("action") == "connect" and msg.get("status") == "request":
+                        self.system_msg += f"*** {msg.get('from')} invite you to chat ***\n"
+
+                except:
+                    pass
 
             bot_response = None
             if len(self.my_msg) > 0 and self.my_msg.startswith("/ai "):
