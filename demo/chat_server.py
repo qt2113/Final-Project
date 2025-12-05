@@ -31,6 +31,8 @@ class Server:
         self.all_sockets.append(self.server)
         #initialize past chat indices
         self.indices={}
+        self.chat_memory = {}   # 用于存放用户发送的聊天消息及情绪
+        self.ai = AI()          # 初始化 AI 模型用于情绪分析
         # sonnet
         # self.sonnet_f = open('AllSonnets.txt.idx', 'rb')
         # self.sonnet = pkl.load(self.sonnet_f)
@@ -219,9 +221,23 @@ class Server:
 #==============================================================================
             elif msg["action"] == "exchange":
                 from_name = self.logged_sock2name[from_sock]
-                the_guys = self.group.list_me(from_name)   # 群内所有成员（含自己）
+                the_guys = self.group.list_me(from_name)
+                #said = msg["from"]+msg["message"]
+                # ===================== 新增：AI情绪分析 =====================
+                sentiment = self.ai.get_sentiment(msg["message"])
 
-                # 格式化消息
+                # ===================== 新增：生成消息对象 =====================
+                msg_obj = {
+                    "from": from_name,
+                    "message": msg["message"],
+                    "sentiment": sentiment,
+                    "timestamp": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())  # 可选：时间戳
+                }
+
+                # ===================== 新增：保存到临时聊天存储器 =====================
+                if from_name not in self.chat_memory:
+                    self.chat_memory[from_name] = []
+                self.chat_memory[from_name].append(msg_obj)
                 said2 = text_proc(msg["message"], from_name)
 
                 # ===== 1. AI 不写入聊天记录 =====
@@ -394,6 +410,8 @@ class Server:
                #new client request
                sock, address=self.server.accept()
                self.new_client(sock)
+
+
 
 def main():
     server=Server()

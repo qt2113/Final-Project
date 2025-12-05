@@ -473,8 +473,29 @@ class GUI:
                     if msg.get("action") == "connect" and msg.get("status") == "request":
                         self.system_msg += f"*** {msg.get('from')} invite you to chat ***\n"
 
-                except:
-                    pass
+                    if msg.get("action") == "exchange":
+                        sender = msg.get("from")
+                        content = msg.get("message")
+                        sentiment = msg.get("sentiment", "neutral")
+
+                        # 根据情绪添加 emoji
+                        if sentiment == "positive":
+                            emoji = "😊"
+                        elif sentiment == "negative":
+                            emoji = "😢"
+                        else:
+                            emoji = "😐"
+
+                        self.system_msg += f"[{sender}] {content} {emoji} \n"
+                        #handled = True
+
+                #except:
+                #    pass
+                except Exception as e:
+                    self.system_msg += f"[系统错误] 解析消息失败: {e}\n"
+                    #handled = True
+                #if not handled:
+                    #self.system_msg += self.sm.proc(self.my_msg, peer_msg)
 
             bot_response = None
             if "@AI_bot" in self.my_msg:
