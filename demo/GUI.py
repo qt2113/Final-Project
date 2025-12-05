@@ -15,6 +15,7 @@ from tkinter import ttk
 from chat_utils import *
 import json
 import time
+from tkinter import messagebox
 
 # GUI class for the chat
 class GUI:
@@ -30,6 +31,8 @@ class GUI:
         self.my_msg = ""
         self.system_msg = ""
         self.chatbot = chatbot
+         # track if proc thread started
+        self.proc_thread = None
 
     def login(self):
         # login window
@@ -70,6 +73,26 @@ class GUI:
           
         # set the focus of the curser
         self.entryName.focus()
+        
+        # Password label
+        self.labelPwd = Label(self.login,
+                            text = "Password: ",
+                            font = "Helvetica 12")
+
+        self.labelPwd.place(relheight = 0.2,
+                            relx = 0.1,
+                            rely = 0.35)
+
+        # Password Entry
+        self.entryPwd = Entry(self.login,
+                            font = "Helvetica 14",
+                            show="*")
+
+        self.entryPwd.place(relwidth = 0.4,
+                            relheight = 0.12,
+                            relx = 0.35,
+                            rely = 0.35)
+
           
         # create a Continue Button 
         # along with action
@@ -83,26 +106,39 @@ class GUI:
         #self.Window.mainloop()
   
     def goAhead(self, name):
+        name = self.entryName.get().strip()
+        pwd = self.entryPwd.get()
+        if len(name) == 0 or len(pwd) == 0:
+            return  
         if len(name) > 0:
-            msg = json.dumps({"action":"login", "name": name})
-            self.send(msg)
-            response = json.loads(self.recv())
-            if response["status"] == 'ok':
-                self.login.destroy()
-                self.sm.set_state(S_LOGGEDIN)
-                self.sm.set_myname(name)
-                self.layout(name)
-                self.textCons.config(state = NORMAL)
-                # self.textCons.insert(END, "hello" +"\n\n")   
-                self.textCons.insert(END, menu +"\n\n")      
-                self.textCons.config(state = DISABLED)
-                self.textCons.see(END)
-                # while True:
-                #     self.proc()
-        # the thread to receive messages
-            process = threading.Thread(target=self.proc)
-            process.daemon = True
-            process.start()
+            msg = json.dumps({"action": "login", "name": name, "password": pwd})
+            try:
+                self.send(msg)
+            except Exception as e:
+                messagebox.showerror("Network", f"Failed to send login: {e}")
+                return
+            threading.Thread(
+                target=self.wait_login_response,
+                args=(name,),   # 必须传入参数！
+                daemon=True
+            ).start()
+        #     response = json.loads(self.recv())
+        #     if response["status"] == 'ok':
+        #         self.login.destroy()
+        #         self.sm.set_state(S_LOGGEDIN)
+        #         self.sm.set_myname(name)
+        #         self.layout(name)
+        #         self.textCons.config(state = NORMAL)
+        #         # self.textCons.insert(END, "hello" +"\n\n")   
+        #         self.textCons.insert(END, menu +"\n\n")      
+        #         self.textCons.config(state = DISABLED)
+        #         self.textCons.see(END)
+        #         # while True:
+        #         #     self.proc()
+        # # the thread to receive messages
+        #     process = threading.Thread(target=self.proc)
+        #     process.daemon = True
+        #     process.start()  
   
     # The main layout of the chat
     def layout(self,name):
@@ -199,6 +235,77 @@ class GUI:
         self.my_msg = msg
         # print(msg)
         self.entryMsg.delete(0, END)
+
+    def _on_login_success(self, name):
+        """在主线程执行的登录成功回调（通过 after 调用）"""
+        try:
+            if hasattr(self, "login") and self.login:
+                self.login.destroy()
+        except Exception:
+            pass
+
+        self.sm.set_state(S_LOGGEDIN)
+        self.sm.set_myname(name)
+        self.layout(name)
+        # show menu
+        self.textCons.config(state = NORMAL)
+        try:
+            self.textCons.insert(END, menu +"\n\n")
+        except Exception:
+            self.textCons.insert(END, "\n\n")
+        self.textCons.config(state = DISABLED)
+        self.textCons.see(END)
+
+        # start proc thread if not started
+        if self.proc_thread is None or not self.proc_thread.is_alive():
+            self.proc_thread = threading.Thread(target=self.proc, daemon=True)
+            self.proc_thread.start()
+
+    def _on_login_failed(self, reason):
+        """在主线程执行的登录失败回调"""
+        messagebox.showerror("Login failed", reason)
+
+    def goAhead_blocking_alternative(self):
+        """
+        (保留，不被使用) 如果将来需要短超时的同步方式，可以实现 select + 非阻塞 recv。
+        目前使用后台线程方式，因此不使用此函数。
+        """
+        pass
+
+    def wait_login_response(self, requested_name):
+        try:
+            raw = self.recv()
+        except Exception as e:
+            self.Window.after(0, lambda: self._on_login_failed(f"Network error: {e}"))
+            return
+
+        if not raw:
+            self.Window.after(0, lambda: self._on_login_failed("No response from server."))
+            return
+
+        try:
+            response = json.loads(raw)
+        except Exception as e:
+            self.Window.after(0, lambda: self._on_login_failed(f"Invalid response: {e}"))
+            return
+
+        status = response.get("status")
+
+        if status == "ok":
+            name = response.get("name", requested_name)
+            self.Window.after(0, lambda: self._on_login_success(name))
+
+        elif status == "wrong-password":
+            self.Window.after(0, lambda: self._on_login_failed("Wrong password."))
+
+        elif status == "duplicate":
+            self.Window.after(0, lambda: self._on_login_failed("User already logged in."))
+
+        else:
+            self.Window.after(0, lambda: self._on_login_failed(
+                f"Unknown login status: {status}"
+            ))
+
 
     def proc(self):
         # print(self.msg)
