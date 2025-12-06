@@ -225,15 +225,15 @@ def handle_exchange(server, from_sock, msg):
         if group_key not in server.chat_history:
             server.chat_history[group_key] = []
         server.chat_history[group_key].append(msg_obj)
-    elif is_ai_message:
-        # 对于AI消息，可能需要特殊处理
-        # 尝试找到包含当前用户和AI的群组
-        for key in server.group.chat_grps:
-            if from_name in server.group.chat_grps[key] and "TomAI" in server.group.chat_grps[key]:
-                if key not in server.chat_history:
-                    server.chat_history[key] = []
-                server.chat_history[key].append(msg_obj)
-                break
+    # elif is_ai_message:
+    #     # 对于AI消息，可能需要特殊处理
+    #     # 尝试找到包含当前用户和AI的群组
+    #     for key in server.group.chat_grps:
+    #         if from_name in server.group.chat_grps[key] and "TomAI" in server.group.chat_grps[key]:
+    #             if key not in server.chat_history:
+    #                 server.chat_history[key] = []
+    #             server.chat_history[key].append(msg_obj)
+    #             break
 
     # ===================== 保存到临时聊天存储器 =====================
     if from_name not in server.chat_memory:
@@ -320,37 +320,6 @@ def handle_add(server, from_sock, msg):
         "from": from_name
     }))
     
-# def handle_ai_query(server, from_sock, msg):
-#     from_name = server.logged_sock2name[from_sock]
-#     query = msg["query"]
-
-#     # ===== 关键：自动把 TomAI 拉进当前群聊（只拉一次）=====
-#     in_group, group_key = server.group.find_group(from_name)
-#     if in_group and "TomAI" not in server.group.chat_grps[group_key]:
-#         server.group.chat_grps[group_key].append("TomAI")
-#         print(f"TomAI 已被 {from_name} 召唤进入群聊")
-#         for member in server.group.chat_grps[group_key]:
-#             if member != "TomAI" and server.logged_name2sock[member] is not None:
-#                 mysend(server.logged_name2sock[member], json.dumps({
-#                     "action": "connect",
-#                     "status": "success",      
-#                     "from": "TomAI"           
-#                 }))
-
-#     # 调用 AI
-#     reply = server.call_remote_ai(query)
-#     reply = remove_emoji(reply)    
-#     # 广播给当前群聊的所有人（包括提问者自己）
-#     the_guys = server.group.list_me(from_name)  # 包含 TomAI
-#     for g in the_guys:
-#         if g == "TomAI":
-#             continue  # 机器人自己不需要收到消息
-#         to_sock = server.logged_name2sock[g]
-#         mysend(to_sock, json.dumps({
-#             "action": "exchange",
-#             "from": "[TomAI]",
-#             "message": reply
-#         }))
 
 def handle_ai_query(server, from_sock, msg):
     sender = server.logged_sock2name[from_sock]
@@ -396,55 +365,6 @@ def handle_ai_query(server, from_sock, msg):
     }))
 
 def handle_disconnect(server, from_sock, msg):
-    # from_name = server.logged_sock2name[from_sock]
-    # the_guys = server.group.list_me(from_name)
-
-    # # 首先获取群组信息
-    # found, actual_group_key = server.group.find_group(from_name)
-
-    # # ===== 获取群聊历史记录 =====
-    # # 尝试从两种方式获取历史记录
-    # history = []
-
-    # # 方式1：使用成员排序元组作为键
-    # sorted_key = tuple(sorted(the_guys))
-    # if sorted_key in server.group_chat_history:
-    #     history = server.group_chat_history[sorted_key]
-    
-    # # 方式2：如果方式1没有，则使用group.find_group返回的键
-    # if not history and found and actual_group_key in server.chat_history:
-    #     history = server.chat_history.get(actual_group_key, [])
-    
-    # # # 修复：直接使用 the_guys 创建 group_key，不重复添加 from_name
-    # # group_key = tuple(sorted(the_guys))
-    # # history = server.group_chat_history.get(group_key, [])
-    
-    # # # 如果没有找到历史记录，尝试从 chat_history 中查找
-    # # if not history:
-    # #     found, actual_group_key = server.group.find_group(from_name)
-    # #     if found:
-    # #         # 从 chat_history 获取历史记录
-    # #         history = server.chat_history.get(actual_group_key, [])
-    
-    # # ===== 返回记录给退出者 =====
-    # mysend(from_sock, json.dumps({
-    #     "action": "history",
-    #     "results": history  # list
-    # }))
-    
-    # # 清除该群聊的历史记录（可选）
-    # if sorted_key in server.group_chat_history:
-    #     del server.group_chat_history[sorted_key]
-    
-    # if found and actual_group_key in server.chat_history:
-    #     del server.chat_history[actual_group_key]
-    
-    # server.group.disconnect(from_name)
-    # the_guys.remove(from_name)
-    # if len(the_guys) == 1:  # only one left
-    #     g = the_guys.pop()
-    #     to_sock = server.logged_name2sock[g]
-    #     mysend(to_sock, json.dumps({"action":"disconnect"}))
     name = server.logged_sock2name[from_sock]
     in_group, gkey = server.group.find_group(name)
 
