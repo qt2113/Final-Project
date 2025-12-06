@@ -15,6 +15,42 @@ import pickle as pkl
 from chat_utils import *
 import chat_group as grp
 from Chatbot_client import ChatBotClientOpenAI
+import re
+
+def remove_emoji(text):
+    # 匹配大部分emoji字符
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # 表情符号
+        "\U0001F300-\U0001F5FF"  # 符号 &  pictographs
+        "\U0001F680-\U0001F6FF"  # 交通工具 & 符号
+        "\U0001F1E0-\U0001F1FF"  # 国旗
+        "]+", flags=re.UNICODE)
+    return emoji_pattern.sub(r'', text)
+
+
+class AI:
+    def __init__(self):
+        from Chatbot_client import ChatBotClientOpenAI
+        self.llm = ChatBotClientOpenAI()
+    
+    def get_sentiment(self, text):
+        """
+        使用 LLM 分析情绪，返回 'positive', 'negative', 'neutral'
+        """
+        prompt = f"请判断这段话的情绪: {text}。只返回 positive/negative/neutral。"
+        try:
+            resp = self.llm.chat(prompt)
+            resp = resp.lower()
+            if 'positive' in resp:
+                return 'positive'
+            elif 'negative' in resp:
+                return 'negative'
+            else:
+                return 'neutral'
+        except Exception as e:
+            print("AI情绪分析失败:", e)
+            return 'neutral'
 
 class Server:
     def __init__(self):
@@ -31,8 +67,11 @@ class Server:
         self.all_sockets.append(self.server)
         #initialize past chat indices
         self.indices={}
-        self.chat_memory = {}   # 用于存放用户发送的聊天消息及情绪
-        #self.ai = AI()          # 初始化 AI 模型用于情绪分析
+        self.chat_history = {} 
+        self.ai = AI()  # 用于存放用户发送的聊天消息及情绪
+        self.group_chat_history = {}  # 记录每个群的聊天历史
+        self.chat_memory = {}
+
         # sonnet
         # self.sonnet_f = open('AllSonnets.txt.idx', 'rb')
         # self.sonnet = pkl.load(self.sonnet_f)
@@ -222,46 +261,76 @@ class Server:
             elif msg["action"] == "exchange":
                 from_name = self.logged_sock2name[from_sock]
                 the_guys = self.group.list_me(from_name)
-                #said = msg["from"]+msg["message"]
-                # ===================== 新增：AI情绪分析 =====================
-                # sentiment = self.ai.get_sentiment(msg["message"])
+                said = msg["from"]+msg["message"]
+                #===================== 新增：AI情绪分析 =====================
+                if from_name != "TomAI":                # 新增判断
+                    sentiment = self.ai.get_sentiment(msg["message"])
+                else:
+                    sentiment = None
+                # ===================== 新增：生成消息对象 =====================
+                msg_obj = {
+                    "from": from_name,
+                    "message": msg["message"],
+                    "sentiment": sentiment,
+                    "timestamp": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())  # 可选：时间戳
+                }
 
-                # # ===================== 新增：生成消息对象 =====================
-                # msg_obj = {
-                #     "from": from_name,
-                #     "message": msg["message"],
-                #     "sentiment": sentiment,
-                #     "timestamp": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())  # 可选：时间戳
-                # }
+                # === 同时保存到两种历史记录中确保一致性 ===
+                # 方式1：使用成员排序元组作为键（与disconnect保持一致）
+                sorted_key = tuple(sorted(the_guys))
+                if sorted_key not in self.group_chat_history:
+                    self.group_chat_history[sorted_key] = []
+                self.group_chat_history[sorted_key].append(msg_obj)
 
-                # # ===================== 新增：保存到临时聊天存储器 =====================
-                # if from_name not in self.chat_memory:
-                #     self.chat_memory[from_name] = []
-                # self.chat_memory[from_name].append(msg_obj)
+                # === 保存到群聊历史 ===
+                found, group_key = self.group.find_group(from_name)
+                if found:
+                    if group_key not in self.chat_history:   # 新建群历史
+                        self.chat_history[group_key] = []
+                    self.chat_history[group_key].append(msg_obj)
+
+                # ===================== 新增：保存到临时聊天存储器 =====================
+                if from_name not in self.chat_memory:
+                    self.chat_memory[from_name] = []
+                self.chat_memory[from_name].append(msg_obj)
                 said2 = text_proc(msg["message"], from_name)
 
                 # ===== 1. AI 不写入聊天记录 =====
                 if from_name != "TomAI":
                     self.indices[from_name].add_msg_and_index(said2)
 
+                # # ======== 保存完整群聊记录 ========
+                # # 把一个群视为成员组成的 tuple key，使其可作为字典键
+                # group_key = tuple(sorted(the_guys))
+
+                # if group_key not in self.group_chat_history:
+                #     self.group_chat_history[group_key] = []
+
+
+                # # 保存记录（包含 emoji 情绪标签）
+                # self.group_chat_history[group_key].append({
+                #     "from": from_name,
+                #     "message": msg["message"],
+                #     "sentiment": sentiment,
+                #     "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
+                # })
+
                 # ===== 2. 向群组其他成员广播 =====
                 for g in the_guys:
-                    if g == from_name:
+                    if g == from_name or g == "TomAI":
                         continue  # 发消息的人不重复写
-                    if g == "TomAI":
-                        continue  # AI 不需要写 index、自身也不接收
-
-                    # 写入对方 index
-                    if g in self.indices:
-                        self.indices[g].add_msg_and_index(said2)
-
-                    # 发送给对方
                     to_sock = self.logged_name2sock[g]
+                    # 发送消息并附加情绪
                     mysend(to_sock, json.dumps({
                         "action": "exchange",
                         "from": msg["from"],
-                        "message": msg["message"]
+                        "message": msg["message"],
+                        "sentiment": sentiment
                     }))
+                    # 写入对方索引
+                    if g in self.indices:
+                        self.indices[g].add_msg_and_index(said2)
+                
 
 #==============================================================================
 #                 listing available peers
@@ -357,7 +426,7 @@ class Server:
 
                 # 调用 AI
                 reply = self.call_remote_ai(query)
-
+                reply = remove_emoji(reply)  # <- 这里去掉 TomAI 回复的 emoji   
                 # 广播给当前群聊的所有人（包括提问者自己）
                 the_guys = self.group.list_me(from_name)  # 包含 TomAI
                 for g in the_guys:
@@ -373,15 +442,76 @@ class Server:
 #==============================================================================
 # the "from" guy has had enough (talking to "to")!
 #==============================================================================
+            # elif msg["action"] == "disconnect":
+            #     from_name = self.logged_sock2name[from_sock]
+            #     the_guys = self.group.list_me(from_name)
+            #     # ===== 获取群聊 key 取历史 =====
+            #     group_key = tuple(sorted(the_guys + [from_name]))  # 包含自己
+            #     history = self.group_chat_history.get(group_key, [])
+            #     # ===== 返回记录给退出者 =====
+            #     mysend(from_sock, json.dumps({
+            #         "action": "history",
+            #         "results": history  # list
+            #     }))
+            #     self.group.disconnect(from_name)
+            #     the_guys.remove(from_name)
+            #     if len(the_guys) == 1:  # only one left
+            #         g = the_guys.pop()
+            #         to_sock = self.logged_name2sock[g]
+            #         mysend(to_sock, json.dumps({"action":"disconnect"}))
             elif msg["action"] == "disconnect":
                 from_name = self.logged_sock2name[from_sock]
                 the_guys = self.group.list_me(from_name)
+
+                # 首先获取群组信息
+                found, actual_group_key = self.group.find_group(from_name)
+
+                # ===== 获取群聊历史记录 =====
+                # 尝试从两种方式获取历史记录
+                history = []
+
+                # 方式1：使用成员排序元组作为键
+                sorted_key = tuple(sorted(the_guys))
+                if sorted_key in self.group_chat_history:
+                    history = self.group_chat_history[sorted_key]
+                
+                # 方式2：如果方式1没有，则使用group.find_group返回的键
+                if not history and found and actual_group_key in self.chat_history:
+                    history = self.chat_history.get(actual_group_key, [])
+                
+                # # 修复：直接使用 the_guys 创建 group_key，不重复添加 from_name
+                # group_key = tuple(sorted(the_guys))
+                # history = self.group_chat_history.get(group_key, [])
+                
+                # # 如果没有找到历史记录，尝试从 chat_history 中查找
+                # if not history:
+                #     found, actual_group_key = self.group.find_group(from_name)
+                #     if found:
+                #         # 从 chat_history 获取历史记录
+                #         history = self.chat_history.get(actual_group_key, [])
+                
+                # ===== 返回记录给退出者 =====
+                mysend(from_sock, json.dumps({
+                    "action": "history",
+                    "results": history  # list
+                }))
+                
+                # 清除该群聊的历史记录（可选）
+                if sorted_key in self.group_chat_history:
+                    del self.group_chat_history[sorted_key]
+                
+                if found and actual_group_key in self.chat_history:
+                    del self.chat_history[actual_group_key]
+                
                 self.group.disconnect(from_name)
                 the_guys.remove(from_name)
                 if len(the_guys) == 1:  # only one left
                     g = the_guys.pop()
                     to_sock = self.logged_name2sock[g]
                     mysend(to_sock, json.dumps({"action":"disconnect"}))
+                
+            
+
 #==============================================================================
 #                 the "from" guy really, really has had enough
 #==============================================================================

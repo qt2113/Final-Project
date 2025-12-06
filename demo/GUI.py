@@ -453,6 +453,7 @@ class GUI:
         # print(self.msg)
         while True:
             time.sleep(0.1)
+            incoming_peer_display = ""   # ← 必须加这行
             read, write, error = select.select([self.socket], [], [], 0)
             peer_msg = []
             # print(self.msg)
@@ -473,21 +474,44 @@ class GUI:
                     if msg.get("action") == "connect" and msg.get("status") == "request":
                         self.system_msg += f"*** {msg.get('from')} invite you to chat ***\n"
 
-                    # if msg.get("action") == "exchange":
-                    #     sender = msg.get("from")
-                    #     content = msg.get("message")
-                    #     sentiment = msg.get("sentiment", "neutral")
+                    
+                    # 显示退出时历史
+                    if msg.get("action") == "history":  # 显示退出时历史
+                        history_list = msg.get("results", [])
+                        self.textCons.config(state=NORMAL)
+                        self.textCons.insert(END, "\n===== 群聊历史记录 =====\n")
+                        for record in history_list:
+                            sender = record.get("from")
+                            content = record.get("message")
+                            sentiment = record.get("sentiment", "neutral")
+                            timestamp = record.get("timestamp")
+                            # 显示格式
+                            self.textCons.insert(END, f"{timestamp} {sender}: {content}\n")
+                        self.textCons.insert(END, "===== 聊天记录结束 =====\n\n")
+                        self.textCons.config(state=DISABLED)
+                        self.textCons.see(END)
+                        continue
 
-                    #     # 根据情绪添加 emoji
-                    #     if sentiment == "positive":
-                    #         emoji = "😊"
-                    #     elif sentiment == "negative":
-                    #         emoji = "😢"
-                    #     else:
-                    #         emoji = "😐"
 
-                    #     self.system_msg += f"[{sender}] {content} {emoji} \n"
-                    #     #handled = True
+
+                    if msg.get("action") == "exchange":
+                        sender = msg.get("from")
+                        content = msg.get("message")
+                        sentiment = msg.get("sentiment", "neutral")
+
+                        # 默认 content_display 就是 content
+                        content_display = content
+
+                        # 只有非 TomAI 消息才加 emoji
+                        if sender != "[TomAI]":
+                            if sentiment == "positive":
+                                emoji = "😊"
+                            elif sentiment == "negative":
+                                emoji = "😢"
+                            else:
+                                emoji = "😐"
+                        self.system_msg += f'{emoji}'
+                        
 
                 #except:
                 #    pass
@@ -507,20 +531,23 @@ class GUI:
                         "action": "ai_query",
                         "query": query
                     }))
-                    self.my_msg = self.my_msg.replace("@AI_bot", "", 1).strip()                   
+                    self.my_msg = self.my_msg.replace("@AI_bot", "", 1).strip() 
                 else:
                     pass
 
+            
+
             if len(self.my_msg) > 0 or len(peer_msg) > 0:
                 # print(self.system_msg)
-                if len(self.my_msg) > 0 or len(peer_msg) > 0:
-                    self.system_msg += self.sm.proc(self.my_msg, peer_msg)
+                self.system_msg += self.sm.proc(self.my_msg, peer_msg)
                 self.my_msg = ""
                 self.textCons.config(state = NORMAL)
                 self.textCons.insert(END, self.system_msg +"\n\n")      
                 self.textCons.config(state = DISABLED)
                 self.system_msg = ""
                 self.textCons.see(END)
+    
+
 
     def run(self):
         self.login()
