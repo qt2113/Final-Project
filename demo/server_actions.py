@@ -41,6 +41,7 @@ def handle_exchange(server,from_sock, msg):
     from_name = server.logged_sock2name[from_sock]
     the_guys = server.group.list_me(from_name)
     said = msg["from"]+msg["message"]
+    is_ai_message = from_name == "[TomAI]" or msg.get("from") == "[TomAI]" or from_name == "TomAI"
     #=============AI Sentiment Analysis ============
     if from_name != "TomAI":               
         sentiment = server.ai.get_sentiment(msg["message"])
@@ -67,32 +68,34 @@ def handle_exchange(server,from_sock, msg):
         if group_key not in server.chat_history:   # 新建群历史
             server.chat_history[group_key] = []
         server.chat_history[group_key].append(msg_obj)
+    elif is_ai_message:
+        # 对于AI消息，可能需要特殊处理
+        # 尝试找到包含当前用户和AI的群组
+        for key in server.group.chat_grps:
+            if from_name in server.group.chat_grps[key] and "TomAI" in server.group.chat_grps[key]:
+                if key not in server.chat_history:
+                    server.chat_history[key] = []
+                server.chat_history[key].append(msg_obj)
+                break
 
-    # ===================== 新增：保存到临时聊天存储器 =====================
-    if from_name not in server.chat_memory:
-        server.chat_memory[from_name] = []
-    server.chat_memory[from_name].append(msg_obj)
-    said2 = text_proc(msg["message"], from_name)
-
-    # ===== 1. AI 不写入聊天记录 =====
-    if from_name != "TomAI":
+    sender_name = msg["from"].replace("[", "").replace("]", "")  # 清理AI名称中的括号
+    if sender_name not in server.chat_memory:
+        server.chat_memory[sender_name] = []
+    
+    # 对于AI消息，使用不同的格式
+    if is_ai_message:
+        server.chat_memory["TomAI"] = server.chat_memory.get("TomAI", [])
+        server.chat_memory["TomAI"].append(msg_obj)
+    else:
+        server.chat_memory[from_name].append(msg_obj)
+    
+    # 对于AI消息，不需要添加到索引
+    if not is_ai_message:
+        said2 = text_proc(msg["message"], from_name)
         server.indices[from_name].add_msg_and_index(said2)
 
-    # # ======== 保存完整群聊记录 ========
-    # # 把一个群视为成员组成的 tuple key，使其可作为字典键
-    # group_key = tuple(sorted(the_guys))
 
-    # if group_key not in server.group_chat_history:
-    #     server.group_chat_history[group_key] = []
-
-
-    # # 保存记录（包含 emoji 情绪标签）
-    # server.group_chat_history[group_key].append({
-    #     "from": from_name,
-    #     "message": msg["message"],
-    #     "sentiment": sentiment,
-    #     "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
-    # })
+    
 
     # ===== 2. 向群组其他成员广播 =====
     for g in the_guys:
@@ -193,6 +196,28 @@ def handle_ai_query(server, from_sock, msg):
     reply = remove_emoji(reply)    
     # 广播给当前群聊的所有人（包括提问者自己）
     the_guys = server.group.list_me(from_name)  # 包含 TomAI
+    ai_msg_obj = {
+        "from": "[TomAI]",
+        "message": reply,
+        "sentiment": None,
+        "timestamp": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    }
+    
+    # 保存到群聊历史记录
+    sorted_key = tuple(sorted(the_guys))
+    if sorted_key not in server.group_chat_history:
+        server.group_chat_history[sorted_key] = []
+    server.group_chat_history[sorted_key].append(ai_msg_obj)
+    
+    # 保存到chat_history
+    if group_key not in server.chat_history:
+        server.chat_history[group_key] = []
+    server.chat_history[group_key].append(ai_msg_obj)
+    
+    # 保存到AI的聊天内存
+    if "TomAI" not in server.chat_memory:
+        server.chat_memory["TomAI"] = []
+    server.chat_memory["TomAI"].append(ai_msg_obj)
     for g in the_guys:
         if g == "TomAI":
             continue  # 机器人自己不需要收到消息
@@ -222,17 +247,6 @@ def handle_disconnect(server, from_sock, msg):
     # 方式2：如果方式1没有，则使用group.find_group返回的键
     if not history and found and actual_group_key in server.chat_history:
         history = server.chat_history.get(actual_group_key, [])
-    
-    # # 修复：直接使用 the_guys 创建 group_key，不重复添加 from_name
-    # group_key = tuple(sorted(the_guys))
-    # history = server.group_chat_history.get(group_key, [])
-    
-    # # 如果没有找到历史记录，尝试从 chat_history 中查找
-    # if not history:
-    #     found, actual_group_key = server.group.find_group(from_name)
-    #     if found:
-    #         # 从 chat_history 获取历史记录
-    #         history = server.chat_history.get(actual_group_key, [])
     
     # ===== 返回记录给退出者 =====
     mysend(from_sock, json.dumps({
