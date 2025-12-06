@@ -20,18 +20,6 @@ from server_actions import (
     handle_disconnect, handle_time, handle_list, handle_search, handle_add
 )
 
-ACTION_MAP = {
-    "connect": handle_connect,
-    "exchange": handle_exchange,
-    "ai_query": handle_ai_query,
-    "disconnect": handle_disconnect,
-    "time": handle_time,
-    "list": handle_list,
-    "search": handle_search,
-    "add": handle_add,
-}
-
-
 class AI:
     def __init__(self):
         from Chatbot_client import ChatBotClientOpenAI
@@ -74,6 +62,18 @@ class Server:
         self.ai = AI()  # 用于存放用户发送的聊天消息及情绪
         self.group_chat_history = {}  # 记录每个群的聊天历史
         self.chat_memory = {}
+                
+        self.ACTION_MAP = {
+            "connect": handle_connect,
+            "exchange": handle_exchange,
+            "ai_query": handle_ai_query,
+            "disconnect": handle_disconnect,
+            "time": handle_time,
+            "list": handle_list,
+            "search": handle_search,
+            "add": handle_add,
+            }
+
 
         # sonnet
         # self.sonnet_f = open('AllSonnets.txt.idx', 'rb')
@@ -225,6 +225,17 @@ class Server:
             handler(self, from_sock, msg)   # 直接调用
         else:
             print("未知 action:", action)
+
+    def broadcast_to_peers(self, sender_name, msg_json_str):
+        _, gkey = self.group.find_group(sender_name)
+        if gkey not in self.group.chat_grps:
+            return
+        for name in self.group.chat_grps[gkey]:
+            if name == "TomAI":      # 只跳过机器人
+                continue
+            sock = self.logged_name2sock.get(name)
+            if sock:
+                mysend(sock, msg_json_str)   # 包括 sender 自己！
 
 #==============================================================================
 # main loop, loops *forever*

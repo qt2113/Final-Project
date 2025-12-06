@@ -16,6 +16,7 @@ menu = "\n------ Choose one of the following commands ------\n \
         @ _peer_: to connect to the _peer_ and chat\n \
         ? _term_: to search your chat logs where _term_ appears\n \
         p _#_: to get number <#> sonnet\n \
+        @TomAI: to ask TomAI a question\n \
         bye: to leave the chat system\n\n"
 
 S_OFFLINE   = 0

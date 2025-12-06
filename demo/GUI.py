@@ -449,103 +449,32 @@ class GUI:
             ))
 
 
+    def _recv_peer_msg(self):
+        """安全接收一条原始消息（字符串），返回原始字符串或空串"""
+        read, _, _ = select.select([self.socket], [], [], 0)
+        if self.socket in read:
+            try:
+                raw = self.recv()
+                if not raw:
+                    return ""
+                return raw
+            except:
+                return ""
+        return ""
+    
     def proc(self):
         while True:
             time.sleep(0.1)
-            incoming_peer_display = ""   
-            read, write, error = select.select([self.socket], [], [], 0)
-            peer_msg = []
-            # print(self.msg)
-            if self.socket in read:
-                peer_msg = self.recv()
-                try:
-                    msg = json.loads(peer_msg)
-
-                    # 群聊被创建（来自 server）
-                    if msg.get("action") == "connect" and msg.get("status") == "group-created":
-                        self.system_msg += f"*** Group created. Creator: {msg.get('from')} ***\n"
-
-                    # 有人加入群聊
-                    if msg.get("action") == "connect" and msg.get("status") == "success":
-                        self.system_msg += f"*** Join the group ***\n"
-
-                    # 有人向我发起连接请求（两人模式）
-                    if msg.get("action") == "connect" and msg.get("status") == "request":
-                        self.system_msg += f"*** {msg.get('from')} invite you to chat ***\n"
-
-                    
-                    # 显示退出时历史
-                    if msg.get("action") == "history":  # 显示退出时历史
-                        history_list = msg.get("results", [])
-                        self.textCons.config(state=NORMAL)
-                        self.textCons.insert(END, "\n===== 群聊历史记录 =====\n")
-                        for record in history_list:
-                            sender = record.get("from")
-                            content = record.get("message")
-                            sentiment = record.get("sentiment", "neutral")
-                            timestamp = record.get("timestamp")
-                            # 显示格式
-                            self.textCons.insert(END, f"{timestamp} {sender}: {content}\n")
-                        self.textCons.insert(END, "===== 聊天记录结束 =====\n\n")
-                        self.textCons.config(state=DISABLED)
-                        self.textCons.see(END)
-                        continue
-
-
-
-                    if msg.get("action") == "exchange":
-                        sender = msg.get("from")
-                        content = msg.get("message")
-                        sentiment = msg.get("sentiment", "neutral")
-                        
-                        if sender != "[TomAI]":
-                            if sentiment == "positive":
-                                emoji = "😊"
-                            elif sentiment == "negative":
-                                emoji = "😢"
-                            else:
-                                emoji = "😐"
-                            content_display = f' {emoji}'
-                        else:
-                            content_display = ''
-                        self.system_msg += f'{content_display}'
-                        
-
-                #except:
-                #    pass
-                except Exception as e:
-                    self.system_msg += f"[系统错误] 解析消息失败: {e}\n"
-                    #handled = True
-                #if not handled:
-                    #self.system_msg += self.sm.proc(self.my_msg, peer_msg)
-
-            bot_response = None
-            if "@AI_bot" in self.my_msg:
-                parts = self.my_msg.split("@AI_bot", 1)
-                query = parts[1].strip() if len(parts) > 1 else ""
-                
-                if query:  # 有问题才发
-                    mysend(self.socket, json.dumps({
-                        "action": "ai_query",
-                        "query": query
-                    }))
-                    self.my_msg = self.my_msg.replace("@AI_bot", "", 1).strip() 
-                else:
-                    pass
-
-            
-
-            if len(self.my_msg) > 0 or len(peer_msg) > 0:
-                # print(self.system_msg)
-                self.system_msg += self.sm.proc(self.my_msg, peer_msg)
+            peer_msg = self._recv_peer_msg() or ""  # 收原始字符串
+            if self.my_msg or peer_msg:
+                self.system_msg += self.sm.proc(self.my_msg, peer_msg)  # 全部交给状态机
                 self.my_msg = ""
-                self.textCons.config(state = NORMAL)
-                self.textCons.insert(END, self.system_msg +"\n\n")      
-                self.textCons.config(state = DISABLED)
-                self.system_msg = ""
+            if self.system_msg:
+                self.textCons.config(state=NORMAL)
+                self.textCons.insert(END, self.system_msg)
+                self.textCons.config(state=DISABLED)
                 self.textCons.see(END)
-    
-
+                self.system_msg = ""
 
     def run(self):
         self.login()

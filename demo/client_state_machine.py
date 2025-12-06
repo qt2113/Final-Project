@@ -131,36 +131,73 @@ class ClientSM:
 #==============================================================================
         elif self.state == S_CHATTING:
             if len(my_msg) > 0:     # my stuff going out
-                mysend(self.s, json.dumps({"action":"exchange", "from":"[" + self.me + "]", "message":my_msg}))
-                if my_msg == 'bye':
-                    self.disconnect()
-                    self.state = S_LOGGEDIN
-                    self.peer = ''
-                if len(my_msg) > 0 and my_msg != "bye":
-                    # 自己发送的消息也要显示
-                    self.out_msg += "[" + self.me + "] " + my_msg + "\n"
-                if my_msg.startswith("add "):
+                if my_msg.startswith("@TomAI"):
+                    query = my_msg[6:].strip()
+                    if query:
+                        mysend(self.s, json.dumps({"action": "ai_query", "query": query}))
+                        self.my_msg = ""        
+                        return self.out_msg     
+
+                elif my_msg.startswith("add "):
                     new_user = my_msg[4:].strip()
                     mysend(self.s, json.dumps({"action": "add", "target": new_user}))
-                    return ""
+                    return self.out_msg
+
+                elif my_msg == 'bye':
+                    mysend(self.s, json.dumps({"action":"exchange", "from":"[" + self.me + "]", "message":"bye"}))
+                    # self.disconnect()
+                    # self.state = S_LOGGEDIN
+                    # self.peer = ''
+                    return self.out_msg
+
+                else:
+                    mysend(self.s, json.dumps({"action":"exchange", "from":"[" + self.me + "]", "message":my_msg}))
+                    self.out_msg += f"[{self.me}]: {my_msg}\n"
+
+                self.my_msg = ""
+                return self.out_msg  
 
             if len(peer_msg) > 0:    # peer's stuff, coming in
                 peer_msg = json.loads(peer_msg)
-                # if peer_msg["action"] == "connect":
-                #     self.out_msg += "(" + peer_msg["from"] + " joined)\n"
-                # elif peer_msg["action"] == "disconnect":
-                #     self.state = S_LOGGEDIN
-                # else:
-                #     self.out_msg += peer_msg["from"] + peer_msg["message"]
                 if peer_msg["action"] == "connect" and peer_msg.get("status")=="request":
                     self.out_msg += f"({peer_msg['from']} joined the chat)\n"
 
                 # 普通聊天消息（群聊/单聊都适用）
                 elif peer_msg["action"] == "exchange":
-                    self.out_msg += peer_msg["from"] + peer_msg["message"]
+                    sender = peer_msg.get("from")
+                    content = peer_msg.get("message")
+                    sentiment = peer_msg.get("sentiment", "neutral")                    
+                    if sender != "[TomAI]":
+                        if sentiment == "positive":
+                            emoji = "😊"
+                        elif sentiment == "negative":
+                            emoji = "😢"
+                        elif sentiment == "neutral":
+                            emoji = "😐"
+                        else:
+                            emoji = ""
+                        content_display = f' {emoji}'
+                    else:
+                        content_display = ''
+                    self.out_msg += peer_msg["from"] + peer_msg["message"] + f'{content_display}\n'
+                
+                elif peer_msg["action"] == "history":
+                    history_list = peer_msg.get("results", [])
+                    self.out_msg += "\n===== 群聊历史记录 =====\n"
+                    for record in history_list:
+                        sender = record.get("from")
+                        content = record.get("message")
+                        sentiment = record.get("sentiment", "neutral")
+                        timestamp = record.get("timestamp")
+                        # 显示格式
+                        self.out_msg += f"{timestamp} {sender}: {content}\n"
+                    self.out_msg += "===== 聊天记录结束 =====\n\n"                    
 
                 elif peer_msg["action"] == "disconnect":
+                    self.out_msg += 'You are disconnected from ' + self.peer + '\n'
                     self.state = S_LOGGEDIN
+                    self.peer = ''
+
 
 
             # Display the menu again
