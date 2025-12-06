@@ -16,6 +16,8 @@ from chat_utils import *
 import json
 import time
 from tkinter import messagebox
+from image_generator import ImageGenerator
+import hashlib
 
 # GUI class for the chat
 class GUI:
@@ -33,6 +35,8 @@ class GUI:
         self.chatbot = chatbot
          # track if proc thread started
         self.proc_thread = None
+        self.img_gen = ImageGenerator()
+
 
     def login(self):
         # login window
@@ -111,7 +115,8 @@ class GUI:
         if len(name) == 0 or len(pwd) == 0:
             return  
         if len(name) > 0:
-            msg = json.dumps({"action": "login", "name": name, "password": pwd})
+            pwd_hash = hashlib.sha256(pwd.encode()).hexdigest()
+            msg = json.dumps({"action": "login", "name": name, "password": pwd_hash})
             try:
                 self.send(msg)
             except Exception as e:
@@ -119,26 +124,10 @@ class GUI:
                 return
             threading.Thread(
                 target=self.wait_login_response,
-                args=(name,),   # 必须传入参数！
+                args=(name,),  
                 daemon=True
             ).start()
-        #     response = json.loads(self.recv())
-        #     if response["status"] == 'ok':
-        #         self.login.destroy()
-        #         self.sm.set_state(S_LOGGEDIN)
-        #         self.sm.set_myname(name)
-        #         self.layout(name)
-        #         self.textCons.config(state = NORMAL)
-        #         # self.textCons.insert(END, "hello" +"\n\n")   
-        #         self.textCons.insert(END, menu +"\n\n")      
-        #         self.textCons.config(state = DISABLED)
-        #         self.textCons.see(END)
-        #         # while True:
-        #         #     self.proc()
-        # # the thread to receive messages
-        #     process = threading.Thread(target=self.proc)
-        #     process.daemon = True
-        #     process.start()  
+        
   
     # The main layout of the chat
     def layout(self,name):
@@ -217,13 +206,13 @@ class GUI:
           
         self.textCons.config(cursor = "arrow")
 
-        self.btnAI = Button(self.labelBottom,
+        self.btnAI = Button(self.Window,
                             text="AI Chat",
-                            font="Helvetica 10 bold",
+                            font="Helvetica 8 bold",
                             bg="#2E86C1",
                             fg="white",
                             command=self.open_ai_window)
-        self.btnAI.place(relx=0.53, rely=0.008, relheight=0.06, relwidth=0.22)
+        self.btnAI.place(relx=0.75, rely=0.02, relheight=0.05, relwidth=0.13)
 
           
         # create a scroll bar
@@ -248,6 +237,17 @@ class GUI:
             command=self.group_chat
         )
         self.btnGroup.place(relx=0.77, rely=0.08, relheight=0.05, relwidth=0.22)
+        # ==== Image Generate 按钮 ====
+        self.btnImage = Button(
+            self.Window,
+            text="Image Gen",
+            font="Helvetica 8 bold",
+            bg="#117A65",
+            fg="white",
+            command=self.open_image_window
+        )
+        self.btnImage.place(relx=0.87, rely=0.02, relheight=0.05, relwidth=0.13)
+
 
     def group_chat(self):
         """Enter group chat with ALL online users."""
@@ -365,6 +365,74 @@ class GUI:
             font="Helvetica 10 bold",
             relief=GROOVE
         ).pack(side=RIGHT)
+
+    # ===========================
+    #   AI Image Generation 独立窗口
+    # ===========================
+    def open_image_window(self):
+        if hasattr(self, "img_win") and self.img_win.winfo_exists():
+            self.img_win.lift()
+            return
+
+        self.img_win = Toplevel(self.Window)
+        self.img_win.title("AI Image Generator")
+        self.img_win.geometry("480x400")
+        self.img_win.configure(bg="#1C2833")
+
+        Label(
+            self.img_win,
+            text="Enter your prompt:",
+            font="Helvetica 12 bold",
+            bg="#1C2833", fg="white"
+        ).pack(pady=10)
+
+        self.img_prompt = Entry(
+            self.img_win,
+            font="Helvetica 12",
+            bg="#2C3E50", fg="white",
+            width=40
+        )
+        self.img_prompt.pack(pady=5)
+
+        Button(
+            self.img_win,
+            text="Generate Image",
+            font="Helvetica 11 bold",
+            bg="#148F77", fg="white",
+            command=self.generate_image
+        ).pack(pady=12)
+
+        # 展示生成结果
+        self.img_status = Label(
+            self.img_win,
+            text="",
+            font="Helvetica 10",
+            bg="#1C2833", fg="#D5D8DC"
+        )
+        self.img_status.pack(pady=10)
+
+    def generate_image(self):
+        prompt = self.img_prompt.get().strip()
+        if not prompt:
+            self.img_status.config(text="Please enter a prompt.")
+            return
+
+        self.img_status.config(text="Generating... Please wait.")
+
+        def worker():
+            try:
+                output_path = "generated_image.png"
+                path = self.img_gen.generate(prompt, save_path=output_path)
+                self.img_status.after(0, lambda: self.img_status.config(
+                    text=f"Image generated: {path}"
+                ))
+            except Exception as e:
+                self.img_status.after(0, lambda: self.img_status.config(
+                    text=f"Error: {e}"
+                ))
+
+        threading.Thread(target=worker, daemon=True).start()
+
 
 
     def ai_send_button(self):

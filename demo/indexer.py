@@ -5,6 +5,8 @@ Created on Sat Jul  5 11:38:58 2014
 @author: zzhang
 """
 import pickle
+import hashlib
+import pickle
 
 class Index:
     def __init__(self, name):
@@ -13,6 +15,15 @@ class Index:
         self.index = {}
         self.total_msgs = 0
         self.total_words = 0
+        self.password_hash = None
+
+    def set_password(self, password):
+        self.password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+    def check_password(self, password):
+        if self.password_hash is None:
+            return True  
+        return hashlib.sha256(password.encode()).hexdigest() == self.password_hash
         
     def get_total_words(self):
         return self.total_words

@@ -102,100 +102,57 @@ class Server:
     def login(self, sock):
         try:
             raw = myrecv(sock)
+            if not raw:
+                return
             msg = json.loads(raw)
 
-            if len(msg) > 0:
+            if msg.get("action") != "login":
+                return
 
-                if msg["action"] == "login":
-                    name = msg["name"]
-                    password = msg.get("password", "")
+            name = msg["name"].strip()
+            password_received = msg.get("password", "")  # 明文密码
 
-                    # ====== 新增：如果重复登录 ======
-                    if self.group.is_member(name):
-                        mysend(sock, json.dumps({
-                            "action": "login",
-                            "status": "duplicate"
-                        }))
-                        print(name + " duplicate login attempt")
-                        return
+            # 防止重复登录
+            if self.group.is_member(name):
+                mysend(sock, json.dumps({"action": "login", "status": "duplicate"}))
+                return
 
-                    # ====== 原逻辑：移动 socket ======
-                    if sock in self.new_clients:
-                        self.new_clients.remove(sock)
+            if sock in self.new_clients:
+                self.new_clients.remove(sock)
 
-                    self.logged_name2sock[name] = sock
-                    self.logged_sock2name[sock] = name
+            self.logged_name2sock[name] = sock
+            self.logged_sock2name[sock] = name
 
-                    # ====== 原逻辑：第一次加载 index ======
-                    if name not in self.indices.keys():
-                        try:
-                            # 尝试读取本地 index
-                            self.indices[name] = pkl.load(open(name + '.idx', 'rb'))
+            # 加载或创建用户索引
+            if name not in self.indices:
+                try:
+                    self.indices[name] = pkl.load(open(f"{name}.idx", "rb"))
+                except (IOError, EOFError, pkl.UnpicklingError):
+                    self.indices[name] = indexer.Index(name)
 
-                            # ====== 新增：检查密码 ======
-                            if getattr(self.indices[name], "password", None) != password:
-                                mysend(sock, json.dumps({
-                                    "action": "login",
-                                    "status": "wrong-password"
-                                }))
-                                return
+            user_idx = self.indices[name]
 
-                            # 密码正确 → 登录成功
-                            print(name + " logged in")
-                            self.group.join(name)
-                            mysend(sock, json.dumps({
-                                "action": "login",
-                                "status": "ok",
-                                "name": name
-                            }))
-                            return
+            # === 密码处理逻辑 ===
+            password_hash = getattr(user_idx, "password_hash", None)
 
-                        except IOError:
-                            # index不存在 → 第一次登录
-                            self.indices[name] = indexer.Index(name)
-                            # ====== 新增：保存密码到 index ======
-                            self.indices[name].password = password
-
-                            print(name + " logged in (first time)")
-                            self.group.join(name)
-                            mysend(sock, json.dumps({
-                                "action": "login",
-                                "status": "ok",
-                                "name": name
-                            }))
-                            return
-
-                    else:
-                        # 第二次登录（index已经在内存中）
-                        idx = self.indices[name]
-
-                        # ====== 新增密码检查 ======
-                        if getattr(idx, "password", None) != password:
-                            mysend(sock, json.dumps({
-                                "action": "login",
-                                "status": "wrong-password"
-                            }))
-                            return
-
-                        print(name + " logged in")
-                        self.group.join(name)
-                        mysend(sock, json.dumps({
-                            "action": "login",
-                            "status": "ok",
-                            "name": name
-                        }))
-                        return
-
-                else:
-                    print("wrong code received")
-
+            if password_hash:
+                # 老用户或已有密码：必须匹配
+                if not user_idx.check_password(password_received):
+                    del self.logged_name2sock[name]
+                    del self.logged_sock2name[sock]
+                    mysend(sock, json.dumps({"action": "login", "status": "wrong-password"}))
+                    return
             else:
-                self.logout(sock)
+                # 新用户或老用户第一次登录：设置密码
+                user_idx.set_password(password_received)
+
+            # 登录成功
+            print(f"{name} logged in")
+            self.group.join(name)
+            mysend(sock, json.dumps({"action": "login", "status": "ok", "name": name}))
 
         except Exception as e:
             print("login exception:", e)
-            if sock in self.all_sockets:
-                self.all_sockets.remove(sock)
 
     
 
@@ -219,6 +176,9 @@ class Server:
             self.logout(from_sock)
             return
         msg = json.loads(msg)
+        if msg.get("action") == "login":
+            # 已经登录的 socket 不可能再发 login，直接忽略（防止误报）
+            return
         action = msg.get("action")
         handler = self.ACTION_MAP.get(action)
         if handler:
