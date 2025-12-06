@@ -450,10 +450,9 @@ class GUI:
 
 
     def proc(self):
-        # print(self.msg)
         while True:
             time.sleep(0.1)
-            incoming_peer_display = ""   # ← 必须加这行
+            incoming_peer_display = ""   
             read, write, error = select.select([self.socket], [], [], 0)
             peer_msg = []
             # print(self.msg)
@@ -498,11 +497,7 @@ class GUI:
                         sender = msg.get("from")
                         content = msg.get("message")
                         sentiment = msg.get("sentiment", "neutral")
-
-                        # 默认 content_display 就是 content
-                        content_display = content
-
-                        # 只有非 TomAI 消息才加 emoji
+                        
                         if sender != "[TomAI]":
                             if sentiment == "positive":
                                 emoji = "😊"
@@ -510,7 +505,10 @@ class GUI:
                                 emoji = "😢"
                             else:
                                 emoji = "😐"
-                        self.system_msg += f'{emoji}'
+                            content_display = f' {emoji}'
+                        else:
+                            content_display = ''
+                        self.system_msg += f'{content_display}'
                         
 
                 #except:

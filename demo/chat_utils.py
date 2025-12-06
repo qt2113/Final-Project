@@ -1,5 +1,6 @@
 import socket
 import time
+import re
 
 # use local loop back address by default
 CHAT_IP = '127.0.0.1'
@@ -75,3 +76,14 @@ def myrecv(s):
 def text_proc(text, user):
     ctime = time.strftime('%d.%m.%y,%H:%M', time.localtime())
     return('(' + ctime + ') ' + user + ' : ' + text) # message goes directly to screen
+
+def remove_emoji(text):
+        # 匹配大部分emoji字符
+        emoji_pattern = re.compile(
+            "["
+            "\U0001F600-\U0001F64F"  # 表情符号
+            "\U0001F300-\U0001F5FF"  # 符号 &  pictographs
+            "\U0001F680-\U0001F6FF"  # 交通工具 & 符号
+            "\U0001F1E0-\U0001F1FF"  # 国旗
+            "]+", flags=re.UNICODE)
+        return emoji_pattern.sub(r'', text)

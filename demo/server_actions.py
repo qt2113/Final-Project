@@ -1,0 +1,256 @@
+import json
+from chat_utils import *
+from chat_group import Group
+import time
+def handle_connect(server, from_sock, msg):
+    to_name = msg["target"]
+    from_name = server.logged_sock2name[from_sock]
+    # =====connect to all=====
+    if to_name == "ALL":
+        print("Group chat requested by", from_name)
+        server.group.connect_all()
+
+        for user, sock in server.logged_name2sock.items():
+            mysend(sock, json.dumps({
+                "action": "connect",
+                "status": "group-created",
+                "from": from_name
+            }))
+
+        mysend(from_sock, json.dumps({
+            "action": "connect",
+            "status": "success"
+        }))
+        return
+    # =====connect to one peer=====
+    if to_name == from_name:
+        msg = json.dumps({"action":"connect", "status":"server"})
+    elif server.group.is_member(to_name):
+        to_sock = server.logged_name2sock[to_name]
+        server.group.connect(from_name, to_name)
+        the_guys = server.group.list_me(from_name)
+        msg = json.dumps({"action":"connect", "status":"success"})
+        for g in the_guys[1:]:
+            to_sock = server.logged_name2sock[g]
+            mysend(to_sock, json.dumps({"action":"connect", "status":"request", "from":from_name}))
+    else:
+        msg = json.dumps({"action":"connect", "status":"no-user"})
+    mysend(from_sock, msg)
+
+def handle_exchange(server,from_sock, msg):
+    from_name = server.logged_sock2name[from_sock]
+    the_guys = server.group.list_me(from_name)
+    said = msg["from"]+msg["message"]
+    #=============AI Sentiment Analysis ============
+    if from_name != "TomAI":               
+        sentiment = server.ai.get_sentiment(msg["message"])
+    else:
+        sentiment = None
+    # ============ 生成消息对象 ==================
+    msg_obj = {
+        "from": from_name,
+        "message": msg["message"],
+        "sentiment": sentiment,
+        "timestamp": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) 
+    }
+
+    # === 同时保存到两种历史记录中确保一致性 ===
+    # 方式1：使用成员排序元组作为键（与disconnect保持一致）
+    sorted_key = tuple(sorted(the_guys))
+    if sorted_key not in server.group_chat_history:
+        server.group_chat_history[sorted_key] = []
+    server.group_chat_history[sorted_key].append(msg_obj)
+
+    # === 保存到群聊历史 ===
+    found, group_key = server.group.find_group(from_name)
+    if found:
+        if group_key not in server.chat_history:   # 新建群历史
+            server.chat_history[group_key] = []
+        server.chat_history[group_key].append(msg_obj)
+
+    # ===================== 新增：保存到临时聊天存储器 =====================
+    if from_name not in server.chat_memory:
+        server.chat_memory[from_name] = []
+    server.chat_memory[from_name].append(msg_obj)
+    said2 = text_proc(msg["message"], from_name)
+
+    # ===== 1. AI 不写入聊天记录 =====
+    if from_name != "TomAI":
+        server.indices[from_name].add_msg_and_index(said2)
+
+    # # ======== 保存完整群聊记录 ========
+    # # 把一个群视为成员组成的 tuple key，使其可作为字典键
+    # group_key = tuple(sorted(the_guys))
+
+    # if group_key not in server.group_chat_history:
+    #     server.group_chat_history[group_key] = []
+
+
+    # # 保存记录（包含 emoji 情绪标签）
+    # server.group_chat_history[group_key].append({
+    #     "from": from_name,
+    #     "message": msg["message"],
+    #     "sentiment": sentiment,
+    #     "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
+    # })
+
+    # ===== 2. 向群组其他成员广播 =====
+    for g in the_guys:
+        if g == from_name or g == "TomAI":
+            continue  # 发消息的人不重复写
+        to_sock = server.logged_name2sock[g]
+        # 发送消息并附加情绪
+        mysend(to_sock, json.dumps({
+            "action": "exchange",
+            "from": msg["from"],
+            "message": msg["message"],
+            "sentiment": sentiment
+        }))
+        # 写入对方索引
+        if g in server.indices:
+            server.indices[g].add_msg_and_index(said2)
+    
+
+def handle_list(server, from_sock, msg):
+    from_name = server.logged_sock2name[from_sock]
+    msg = server.group.list_all()
+    mysend(from_sock, json.dumps({"action":"list", "results":msg}))
+
+def handle_poem(server, from_sock, msg):
+    poem_indx = int(msg["target"])
+    from_name = server.logged_sock2name[from_sock]
+    print(from_name + ' asks for ', poem_indx)
+    poem = server.sonnet.get_poem(poem_indx)
+    poem = '\n'.join(poem).strip()
+    print('here:\n', poem)
+    mysend(from_sock, json.dumps({"action":"poem", "results":poem}))
+
+def handle_time(server, from_sock, msg):
+    ctime = time.strftime('%d.%m.%y,%H:%M', time.localtime())
+    mysend(from_sock, json.dumps({"action":"time", "results":ctime}))
+
+def handle_search(server, from_sock, msg):
+    term = msg["target"]
+    from_name = server.logged_sock2name[from_sock]
+    print('search for ' + from_name + ' for ' + term)
+    # search_rslt = (server.indices[from_name].search(term))
+    search_rslt = '\n'.join([x[-1] for x in server.indices[from_name].search(term)])
+    print('server side search: ' + search_rslt)
+    mysend(from_sock, json.dumps({"action":"search", "results":search_rslt}))
+
+def handle_add(server, from_sock, msg):
+    from_name = server.logged_sock2name[from_sock]
+    target = msg["target"]
+
+    if not server.group.is_member(target):
+        mysend(from_sock, json.dumps({"action": "add", "status": "no-user"}))
+        return
+
+    found, group_key = server.group.find_group(from_name)
+    if not found:
+        server.group.connect(from_name, target)
+        mysend(from_sock, json.dumps({"action": "add", "status": "created"}))
+        return
+
+    if target not in server.group.chat_grps[group_key]:
+        server.group.chat_grps[group_key].append(target)
+
+    for member in server.group.chat_grps[group_key]:
+        if member != target:
+            sock_m = server.logged_name2sock[member]
+            mysend(sock_m, json.dumps({
+                "action": "connect",
+                "status": "success",
+                "from": target
+            }))
+
+    to_sock = server.logged_name2sock[target]
+    mysend(to_sock, json.dumps({
+        "action": "connect",
+        "status": "request",
+        "from": from_name
+    }))
+    
+def handle_ai_query(server, from_sock, msg):
+    from_name = server.logged_sock2name[from_sock]
+    query = msg["query"]
+
+    # ===== 关键：自动把 TomAI 拉进当前群聊（只拉一次）=====
+    in_group, group_key = server.group.find_group(from_name)
+    if in_group and "TomAI" not in server.group.chat_grps[group_key]:
+        server.group.chat_grps[group_key].append("TomAI")
+        print(f"TomAI 已被 {from_name} 召唤进入群聊")
+        for member in server.group.chat_grps[group_key]:
+            if member != "TomAI" and server.logged_name2sock[member] is not None:
+                mysend(server.logged_name2sock[member], json.dumps({
+                    "action": "connect",
+                    "status": "success",      
+                    "from": "TomAI"           
+                }))
+
+    # 调用 AI
+    reply = server.call_remote_ai(query)
+    reply = remove_emoji(reply)    
+    # 广播给当前群聊的所有人（包括提问者自己）
+    the_guys = server.group.list_me(from_name)  # 包含 TomAI
+    for g in the_guys:
+        if g == "TomAI":
+            continue  # 机器人自己不需要收到消息
+        to_sock = server.logged_name2sock[g]
+        mysend(to_sock, json.dumps({
+            "action": "exchange",
+            "from": "[TomAI]",
+            "message": reply
+        }))
+
+def handle_disconnect(server, from_sock, msg):
+    from_name = server.logged_sock2name[from_sock]
+    the_guys = server.group.list_me(from_name)
+
+    # 首先获取群组信息
+    found, actual_group_key = server.group.find_group(from_name)
+
+    # ===== 获取群聊历史记录 =====
+    # 尝试从两种方式获取历史记录
+    history = []
+
+    # 方式1：使用成员排序元组作为键
+    sorted_key = tuple(sorted(the_guys))
+    if sorted_key in server.group_chat_history:
+        history = server.group_chat_history[sorted_key]
+    
+    # 方式2：如果方式1没有，则使用group.find_group返回的键
+    if not history and found and actual_group_key in server.chat_history:
+        history = server.chat_history.get(actual_group_key, [])
+    
+    # # 修复：直接使用 the_guys 创建 group_key，不重复添加 from_name
+    # group_key = tuple(sorted(the_guys))
+    # history = server.group_chat_history.get(group_key, [])
+    
+    # # 如果没有找到历史记录，尝试从 chat_history 中查找
+    # if not history:
+    #     found, actual_group_key = server.group.find_group(from_name)
+    #     if found:
+    #         # 从 chat_history 获取历史记录
+    #         history = server.chat_history.get(actual_group_key, [])
+    
+    # ===== 返回记录给退出者 =====
+    mysend(from_sock, json.dumps({
+        "action": "history",
+        "results": history  # list
+    }))
+    
+    # 清除该群聊的历史记录（可选）
+    if sorted_key in server.group_chat_history:
+        del server.group_chat_history[sorted_key]
+    
+    if found and actual_group_key in server.chat_history:
+        del server.chat_history[actual_group_key]
+    
+    server.group.disconnect(from_name)
+    the_guys.remove(from_name)
+    if len(the_guys) == 1:  # only one left
+        g = the_guys.pop()
+        to_sock = server.logged_name2sock[g]
+        mysend(to_sock, json.dumps({"action":"disconnect"}))
+                
