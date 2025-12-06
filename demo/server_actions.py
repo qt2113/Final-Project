@@ -225,6 +225,15 @@ def handle_exchange(server, from_sock, msg):
         if group_key not in server.chat_history:
             server.chat_history[group_key] = []
         server.chat_history[group_key].append(msg_obj)
+    elif is_ai_message:
+        # 对于AI消息，可能需要特殊处理
+        # 尝试找到包含当前用户和AI的群组
+        for key in server.group.chat_grps:
+            if from_name in server.group.chat_grps[key] and "TomAI" in server.group.chat_grps[key]:
+                if key not in server.chat_history:
+                    server.chat_history[key] = []
+                server.chat_history[key].append(msg_obj)
+                break
 
     # ===================== 保存到临时聊天存储器 =====================
     if from_name not in server.chat_memory:
