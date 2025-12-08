@@ -1,305 +1,229 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Apr 30 13:36:58 2021
-
-@author: bing
-"""
-
-# import all the required  modules
 import threading
 import select
 from tkinter import *
-from tkinter import font
-from tkinter import ttk
-from chat_utils import *
+from tkinter import messagebox, ttk
 import json
 import time
-from tkinter import messagebox
-from image_generator import ImageGenerator
 import hashlib
+from chat_utils import * 
+from image_generator import ImageGenerator
 
-# GUI class for the chat
+# ==== UI 配置常量 ====
+FONT_BOLD = "Helvetica 10 bold"
+FONT_NORMAL = "Helvetica 12"
+COLOR_BG_DARK = "#17202A"      
+COLOR_BG_LIGHT = "#ABB2B9"     
+COLOR_TEXT_WHITE = "#EAECEE"
+COLOR_BTN_DEFAULT = "#ABB2B9"
+
 class GUI:
-    # constructor method
     def __init__(self, send, recv, sm, s, chatbot):
-        # chat window which is currently hidden
         self.Window = Tk()
         self.Window.withdraw()
+        
         self.send = send
         self.recv = recv
         self.sm = sm
         self.socket = s
+        self.chatbot = chatbot
+        
         self.my_msg = ""
         self.system_msg = ""
-        self.chatbot = chatbot
-         # track if proc thread started
         self.proc_thread = None
         self.img_gen = ImageGenerator()
+        self.name = ""
 
+    def run(self):
+        self.login()
+        self.Window.mainloop()
 
+    # =========================================================================
+    # 1. 登录逻辑 & 窗口
+    # =========================================================================
     def login(self):
-        # login window
-        self.login = Toplevel()
-        # set the title
-        self.login.title("Login")
-        self.login.resizable(width = False, 
-                             height = False)
-        self.login.configure(width = 400,
-                             height = 300)
-        # create a Label
-        self.pls = Label(self.login, 
-                       text = "Please login to continue",
-                       justify = CENTER, 
-                       font = "Helvetica 14 bold")
-          
-        self.pls.place(relheight = 0.15,
-                       relx = 0.2, 
-                       rely = 0.07)
-        # create a Label
-        self.labelName = Label(self.login,
-                               text = "Name: ",
-                               font = "Helvetica 12")
-          
-        self.labelName.place(relheight = 0.2,
-                             relx = 0.1, 
-                             rely = 0.2)
-          
-        # create a entry box for 
-        # tyoing the message
-        self.entryName = Entry(self.login, 
-                             font = "Helvetica 14")
-          
-        self.entryName.place(relwidth = 0.4, 
-                             relheight = 0.12,
-                             relx = 0.35,
-                             rely = 0.2)
-          
-        # set the focus of the curser
-        self.entryName.focus()
+        self.login_win = Toplevel()
+        self.login_win.title("Login")
+        self.login_win.resizable(False, False)
+        self.login_win.geometry("400x300")
         
-        # Password label
-        self.labelPwd = Label(self.login,
-                            text = "Password: ",
-                            font = "Helvetica 12")
+        Label(self.login_win, text="Please login to continue", justify=CENTER, 
+              font="Helvetica 14 bold").place(relheight=0.15, relx=0.2, rely=0.07)
+        
+        Label(self.login_win, text="Name: ", font=FONT_NORMAL).place(relheight=0.2, relx=0.1, rely=0.2)
+        self.entryName = Entry(self.login_win, font="Helvetica 14")
+        self.entryName.place(relwidth=0.4, relheight=0.12, relx=0.35, rely=0.2)
+        self.entryName.focus()
 
-        self.labelPwd.place(relheight = 0.2,
-                            relx = 0.1,
-                            rely = 0.35)
+        Label(self.login_win, text="Password: ", font=FONT_NORMAL).place(relheight=0.2, relx=0.1, rely=0.35)
+        self.entryPwd = Entry(self.login_win, font="Helvetica 14", show="*")
+        self.entryPwd.place(relwidth=0.4, relheight=0.12, relx=0.35, rely=0.35)
 
-        # Password Entry
-        self.entryPwd = Entry(self.login,
-                            font = "Helvetica 14",
-                            show="*")
+        Button(self.login_win, text="CONTINUE", font="Helvetica 14 bold", 
+               command=self.do_login).place(relx=0.4, rely=0.55)
 
-        self.entryPwd.place(relwidth = 0.4,
-                            relheight = 0.12,
-                            relx = 0.35,
-                            rely = 0.35)
-
-          
-        # create a Continue Button 
-        # along with action
-        self.go = Button(self.login,
-                         text = "CONTINUE", 
-                         font = "Helvetica 14 bold", 
-                         command = lambda: self.goAhead(self.entryName.get()))
-          
-        self.go.place(relx = 0.4,
-                      rely = 0.55)
-        #self.Window.mainloop()
-  
-    def goAhead(self, name):
+    def do_login(self):
         name = self.entryName.get().strip()
         pwd = self.entryPwd.get()
-        if len(name) == 0 or len(pwd) == 0:
-            return  
-        if len(name) > 0:
-            pwd_hash = hashlib.sha256(pwd.encode()).hexdigest()
-            msg = json.dumps({"action": "login", "name": name, "password": pwd_hash})
-            try:
-                self.send(msg)
-            except Exception as e:
-                messagebox.showerror("Network", f"Failed to send login: {e}")
-                return
-            threading.Thread(
-                target=self.wait_login_response,
-                args=(name,),  
-                daemon=True
-            ).start()
+        if not name or not pwd:
+            return
         
-  
-    # The main layout of the chat
-    def layout(self,name):
-        
-        self.name = name
-        # to show chat window
-        self.Window.deiconify()
-        self.Window.title("CHATROOM")
-        self.Window.resizable(width = False,
-                              height = False)
-        self.Window.configure(width = 470,
-                              height = 550,
-                              bg = "#17202A")
-        self.labelHead = Label(self.Window,
-                             bg = "#17202A", 
-                              fg = "#EAECEE",
-                              text = self.name ,
-                               font = "Helvetica 13 bold",
-                               pady = 5)
-          
-        self.labelHead.place(relwidth = 1)
-        self.line = Label(self.Window,
-                          width = 450,
-                          bg = "#ABB2B9")
-          
-        self.line.place(relwidth = 1,
-                        rely = 0.07,
-                        relheight = 0.012)
-          
-        self.textCons = Text(self.Window,
-                             width = 20, 
-                             height = 2,
-                             bg = "#17202A",
-                             fg = "#EAECEE",
-                             font = "Helvetica 14", 
-                             padx = 5,
-                             pady = 5)
-          
-        self.textCons.place(relheight = 0.745,
-                            relwidth = 1, 
-                            rely = 0.08)
-          
-        self.labelBottom = Label(self.Window,
-                                 bg = "#ABB2B9",
-                                 height = 80)
-          
-        self.labelBottom.place(relwidth = 1,
-                               rely = 0.825)
-          
-        self.entryMsg = Entry(self.labelBottom,
-                              bg = "#2C3E50",
-                              fg = "#EAECEE",
-                              font = "Helvetica 13")
-          
-        # place the given widget
-        # into the gui window
-        self.entryMsg.place(relwidth = 0.74,
-                            relheight = 0.06,
-                            rely = 0.008,
-                            relx = 0.011)
-          
-        self.entryMsg.focus()
-          
-        # create a Send Button
-        self.buttonMsg = Button(self.labelBottom,
-                                text = "Send",
-                                font = "Helvetica 10 bold", 
-                                width = 20,
-                                bg = "#ABB2B9",
-                                command = lambda : self.sendButton(self.entryMsg.get()))
-          
-        self.buttonMsg.place(relx = 0.77,
-                             rely = 0.008,
-                             relheight = 0.06, 
-                             relwidth = 0.22)
-          
-        self.textCons.config(cursor = "arrow")
-
-        self.btnAI = Button(self.Window,
-                            text="AI Chat",
-                            font="Helvetica 8 bold",
-                            bg="#2E86C1",
-                            fg="white",
-                            command=self.open_ai_window)
-        self.btnAI.place(relx=0.75, rely=0.02, relheight=0.05, relwidth=0.13)
-
-          
-        # create a scroll bar
-        scrollbar = Scrollbar(self.textCons)
-          
-        # place the scroll bar 
-        # into the gui window
-        scrollbar.place(relheight = 1,
-                        relx = 0.974)
-          
-        scrollbar.config(command = self.textCons.yview)
-          
-        self.textCons.config(state = DISABLED)
-
-        # ==== 群聊按钮 ====
-        self.btnGroup = Button(
-            self.labelBottom,
-            text="Group Chat",
-            font="Helvetica 10 bold",
-            bg="#6C3483",
-            fg="white",
-            command=self.group_chat
-        )
-        self.btnGroup.place(relx=0.77, rely=0.08, relheight=0.05, relwidth=0.22)
-        # ==== Image Generate 按钮 ====
-        self.btnImage = Button(
-            self.Window,
-            text="Image Gen",
-            font="Helvetica 8 bold",
-            bg="#117A65",
-            fg="white",
-            command=self.open_image_window
-        )
-        self.btnImage.place(relx=0.87, rely=0.02, relheight=0.05, relwidth=0.13)
-
-
-    def group_chat(self):
-        """Enter group chat with ALL online users."""
-        msg = json.dumps({
-            "action": "connect",
-            "target": "ALL"
-        })
-        self.send(msg)
-
-  
-    # function to basically start the thread for sending messages
-    def sendButton(self, msg):
-        self.textCons.config(state = DISABLED)
-        self.my_msg = msg
-        # print(msg)
-        self.entryMsg.delete(0, END)
-
-    def _on_login_success(self, name):
-        """在主线程执行的登录成功回调（通过 after 调用）"""
+        pwd_hash = hashlib.sha256(pwd.encode()).hexdigest()
+        msg = json.dumps({"action": "login", "name": name, "password": pwd_hash})
         try:
-            if hasattr(self, "login") and self.login:
-                self.login.destroy()
-        except Exception:
-            pass
+            self.send(msg)
+        except Exception as e:
+            messagebox.showerror("Network", f"Failed to send login: {e}")
+            return
 
+        threading.Thread(target=self._wait_login_response, args=(name,), daemon=True).start()
+
+    def _wait_login_response(self, requested_name):
+        try:
+            raw = self.recv()
+            if not raw: raise Exception("Empty response")
+            response = json.loads(raw)
+        except Exception as e:
+            self.Window.after(0, lambda: messagebox.showerror("Login Error", str(e)))
+            return
+
+        status = response.get("status")
+        if status == "ok":
+            self.name = response.get("name", requested_name)
+            self.Window.after(0, self._on_login_success)
+        elif status == "wrong-password":
+            self.Window.after(0, lambda: messagebox.showerror("Login Failed", "Wrong password."))
+        elif status == "duplicate":
+            self.Window.after(0, lambda: messagebox.showerror("Login Failed", "User already logged in."))
+
+    def _on_login_success(self):
+        if hasattr(self, "login_win"): self.login_win.destroy()
         self.sm.set_state(S_LOGGEDIN)
-        self.sm.set_myname(name)
-        self.layout(name)
-        # show menu
-        self.textCons.config(state = NORMAL)
-        try:
-            self.textCons.insert(END, menu +"\n\n")
-        except Exception:
-            self.textCons.insert(END, "\n\n")
-        self.textCons.config(state = DISABLED)
-        self.textCons.see(END)
-
-        # start proc thread if not started
-        if self.proc_thread is None or not self.proc_thread.is_alive():
-            self.proc_thread = threading.Thread(target=self.proc, daemon=True)
+        self.sm.set_myname(self.name)
+        
+        # 构建主窗口
+        self._setup_main_window()
+        
+        # 启动接收线程
+        if not self.proc_thread or not self.proc_thread.is_alive():
+            self.proc_thread = threading.Thread(target=self._proc_loop, daemon=True)
             self.proc_thread.start()
 
-    def _on_login_failed(self, reason):
-        """在主线程执行的登录失败回调"""
-        messagebox.showerror("Login failed", reason)
+    # =========================================================================
+    # 2. 主聊天窗口构建
+    # =========================================================================
+    def _setup_main_window(self):
+        self.Window.deiconify()
+        self.Window.title("CHATROOM")
+        self.Window.resizable(False, False)
+        self.Window.configure(width=470, height=550, bg=COLOR_BG_DARK)
 
-    # ===========================
-    #   AI ChatBot 独立窗口函数
-    # ===========================
+        # 顶部标题
+        Label(self.Window, text=self.name, bg=COLOR_BG_DARK, fg=COLOR_TEXT_WHITE,
+              font="Helvetica 13 bold", pady=5).place(relwidth=1)
+        Label(self.Window, width=450, bg=COLOR_BG_LIGHT).place(relwidth=1, rely=0.07, relheight=0.012)
 
-    def open_ai_window(self):
-        # 如果窗口已存在，则抬到前面
+        # 消息显示区
+        self.textCons = Text(self.Window, width=20, height=2, bg=COLOR_BG_DARK, fg=COLOR_TEXT_WHITE,
+                             font="Helvetica 14", padx=5, pady=5)
+        self.textCons.place(relheight=0.745, relwidth=1, rely=0.08)
+        
+        # [修改点] 这里初始化显示 Menu
+        self.textCons.config(state=NORMAL)
+        try:
+            # 尝试显示 chat_utils 中的 menu 字符串
+            self.textCons.insert(END, menu + "\n\n")
+        except NameError:
+            self.textCons.insert(END, "Welcome to Chatroom!\n\n")
+        self.textCons.config(state=DISABLED)
+        
+        scrollbar = Scrollbar(self.textCons)
+        scrollbar.place(relheight=1, relx=0.974)
+        scrollbar.config(command=self.textCons.yview)
+
+        # 底部操作区
+        self.labelBottom = Label(self.Window, bg=COLOR_BG_LIGHT, height=80)
+        self.labelBottom.place(relwidth=1, rely=0.825)
+
+        self.entryMsg = Entry(self.labelBottom, bg="#2C3E50", fg=COLOR_TEXT_WHITE, font="Helvetica 13")
+        self.entryMsg.place(relwidth=0.74, relheight=0.06, rely=0.008, relx=0.011)
+        self.entryMsg.focus()
+        self.entryMsg.bind("<Return>", lambda x: self.send_message())
+
+        # ==== 按钮区域 ====
+        # 发送按钮
+        self._create_btn(self.labelBottom, "Send", self.send_message, 
+                         bg=COLOR_BTN_DEFAULT, x=0.77, y=0.008, w=0.22, h=0.06)
+        
+        # 群聊按钮
+        self._create_btn(self.labelBottom, "Group Chat", lambda: self.send_command("connect", "ALL"),
+                         bg="#6C3483", fg="white", x=0.77, y=0.08, w=0.22, h=0.05)
+
+        # Summary 按钮
+        self._create_btn(self.labelBottom, "Summary", lambda: self.send_text_command("/summary"),
+                         bg="#D35400", fg="white", font="Helvetica 9 bold", x=0.77, y=0.15, w=0.10, h=0.05)
+
+        # Keywords 按钮
+        self._create_btn(self.labelBottom, "Keywords", lambda: self.send_text_command("/keywords"),
+                         bg="#27AE60", fg="white", font="Helvetica 9 bold", x=0.89, y=0.15, w=0.10, h=0.05)
+
+        # AI Chat 入口
+        self._create_btn(self.Window, "AI Chat", self._open_ai_window,
+                         bg="#2E86C1", fg="white", font="Helvetica 8 bold", x=0.75, y=0.02, w=0.13, h=0.05)
+        
+        # Image Gen 入口
+        self._create_btn(self.Window, "Image Gen", self._open_image_window,
+                         bg="#117A65", fg="white", font="Helvetica 8 bold", x=0.87, y=0.02, w=0.13, h=0.05)
+
+    def _create_btn(self, parent, text, cmd, bg="gray", fg="black", font=FONT_BOLD, x=0, y=0, w=0.1, h=0.05):
+        btn = Button(parent, text=text, font=font, bg=bg, fg=fg, command=cmd)
+        btn.place(relx=x, rely=y, relwidth=w, relheight=h)
+        return btn
+
+    # =========================================================================
+    # 3. 消息发送与网络处理
+    # =========================================================================
+    def send_message(self):
+        msg = self.entryMsg.get()
+        if msg:
+            self.my_msg = msg
+            self.entryMsg.delete(0, END)
+
+    def send_command(self, action, target):
+        self.send(json.dumps({"action": action, "target": target}))
+
+    def send_text_command(self, text):
+        self.my_msg = text
+
+    def _recv_peer_msg(self):
+        read, _, _ = select.select([self.socket], [], [], 0)
+        if self.socket in read:
+            try:
+                raw = self.recv()
+                return raw if raw else ""
+            except:
+                return ""
+        return ""
+
+    def _proc_loop(self):
+        while True:
+            time.sleep(0.1)
+            peer_msg = self._recv_peer_msg()
+            
+            if self.my_msg or peer_msg:
+                self.system_msg += self.sm.proc(self.my_msg, peer_msg)
+                self.my_msg = ""
+            
+            if self.system_msg:
+                self.textCons.config(state=NORMAL)
+                self.textCons.insert(END, self.system_msg)
+                self.textCons.config(state=DISABLED)
+                self.textCons.see(END)
+                self.system_msg = ""
+
+    # =========================================================================
+    # 4. 子功能窗口 (AI & Image)
+    # =========================================================================
+    def _open_ai_window(self):
         if hasattr(self, "ai_win") and self.ai_win.winfo_exists():
             self.ai_win.lift()
             return
@@ -309,244 +233,85 @@ class GUI:
         self.ai_win.geometry("520x560")
         self.ai_win.configure(bg="#1C2833")
 
-        # ====== 1. 上方聊天显示区 ======
-        self.ai_text = Text(
-            self.ai_win,
-            state=DISABLED, wrap=WORD,
-            bg="#17202A", fg="#EAECEE",
-            font="Helvetica 13", relief=FLAT
-        )
-        self.ai_text.pack(fill=BOTH, expand=True, padx=8, pady=(8, 0))
+        self.ai_text = Text(self.ai_win, state=DISABLED, wrap=WORD, bg="#17202A", fg="#EAECEE", font="Helvetica 13")
+        self.ai_text.pack(fill=BOTH, expand=True, padx=8, pady=8)
 
-        # ====== 2. 人格选择区 ======
-        persona_frame = Frame(self.ai_win, bg="#1C2833")
-        persona_frame.pack(fill=X, padx=8, pady=(6, 6))
-
-        Label(
-            persona_frame, text="AI Personality:",
-            fg="white", bg="#1C2833",
-            font="Helvetica 10 bold"
-        ).pack(side=LEFT, padx=(0, 6))
-
-        self.persona_box = ttk.Combobox(
-            persona_frame,
-            values=[
-                "You are a friendly Python tutor.",
-                "You are a strict professor who answers concisely.",
-                "You are a humorous chatbot who jokes while answering.",
-                "You are a poetic assistant who replies like a poem.",
-            ],
-            font="Helvetica 10",
-            state="readonly"
-        )
+        frame = Frame(self.ai_win, bg="#1C2833")
+        frame.pack(fill=X, padx=8, pady=5)
+        Label(frame, text="Personality:", fg="white", bg="#1C2833").pack(side=LEFT)
+        self.persona_box = ttk.Combobox(frame, values=[
+            "You are a friendly Python tutor.",
+            "You are a strict professor.",
+            "You are a humorous chatbot.",
+            "You are a poetic assistant."
+        ], state="readonly")
         self.persona_box.set("You are a friendly Python tutor.")
-        self.persona_box.pack(side=LEFT, fill=X, expand=True)
+        self.persona_box.pack(side=LEFT, fill=X, expand=True, padx=5)
 
-        # ====== 3. 输入框 + 发送按钮区域 ======
         bottom = Frame(self.ai_win, bg="#1C2833")
-        bottom.pack(fill=X, padx=8, pady=(0, 10))
+        bottom.pack(fill=X, padx=8, pady=10)
+        self.ai_entry = Entry(bottom, font="Helvetica 12", bg="#2C3E50", fg="white")
+        self.ai_entry.pack(side=LEFT, fill=X, expand=True)
+        self.ai_entry.bind("<Return>", lambda e: self._ai_send())
+        Button(bottom, text="Send", command=self._ai_send, bg="#566573", fg="white").pack(side=RIGHT, padx=5)
 
-        # 输入框
-        self.ai_entry = Entry(
-            bottom,
-            font="Helvetica 12",
-            bg="#2C3E50", fg="white",
-            relief=FLAT
-        )
-        self.ai_entry.pack(side=LEFT, fill=X, expand=True, padx=(0, 10))
-        self.ai_entry.bind("<Return>", lambda e: self.ai_send_button())
+    def _ai_send(self):
+        text = self.ai_entry.get().strip()
+        if not text: return
+        self.ai_entry.delete(0, END)
+        
+        self._append_ai_text(f"[You] {text}")
+        threading.Thread(target=self._ai_thread_task, args=(text,), daemon=True).start()
 
-        # 发送按钮
-        Button(
-            bottom,
-            text="Send",
-            command=self.ai_send_button,
-            bg="#566573", fg="#FDFEFE",
-            font="Helvetica 10 bold",
-            relief=GROOVE
-        ).pack(side=RIGHT)
+    def _ai_thread_task(self, text):
+        try:
+            self.chatbot.messages = [{"role": "system", "content": self.persona_box.get()}]
+            reply = self.chatbot.chat(text)
+            self.ai_win.after(0, lambda: self._append_ai_text(f"[TomAI] {reply}"))
+        except Exception as e:
+            self.ai_win.after(0, lambda: self._append_ai_text(f"[Error] {e}"))
 
-    # ===========================
-    #   AI Image Generation 独立窗口
-    # ===========================
-    def open_image_window(self):
+    def _append_ai_text(self, msg):
+        if not hasattr(self, "ai_text"): return
+        self.ai_text.config(state=NORMAL)
+        self.ai_text.insert(END, msg + "\n")
+        self.ai_text.see(END)
+        self.ai_text.config(state=DISABLED)
+
+    def _open_image_window(self):
         if hasattr(self, "img_win") and self.img_win.winfo_exists():
             self.img_win.lift()
             return
-
+            
         self.img_win = Toplevel(self.Window)
         self.img_win.title("AI Image Generator")
-        self.img_win.geometry("480x400")
+        self.img_win.geometry("480x250")
         self.img_win.configure(bg="#1C2833")
 
-        Label(
-            self.img_win,
-            text="Enter your prompt:",
-            font="Helvetica 12 bold",
-            bg="#1C2833", fg="white"
-        ).pack(pady=10)
-
-        self.img_prompt = Entry(
-            self.img_win,
-            font="Helvetica 12",
-            bg="#2C3E50", fg="white",
-            width=40
-        )
+        Label(self.img_win, text="Enter prompt:", font="Helvetica 12 bold", bg="#1C2833", fg="white").pack(pady=10)
+        self.img_prompt = Entry(self.img_win, font="Helvetica 12", width=40)
         self.img_prompt.pack(pady=5)
-
-        Button(
-            self.img_win,
-            text="Generate Image",
-            font="Helvetica 11 bold",
-            bg="#148F77", fg="white",
-            command=self.generate_image
-        ).pack(pady=12)
-
-        # 展示生成结果
-        self.img_status = Label(
-            self.img_win,
-            text="",
-            font="Helvetica 10",
-            bg="#1C2833", fg="#D5D8DC"
-        )
+        
+        self.img_status = Label(self.img_win, text="", bg="#1C2833", fg="#D5D8DC")
         self.img_status.pack(pady=10)
+        
+        Button(self.img_win, text="Generate", font="Helvetica 11 bold", bg="#148F77", fg="white",
+               command=self._generate_image_task).pack(pady=5)
 
-    def generate_image(self):
+    def _generate_image_task(self):
         prompt = self.img_prompt.get().strip()
-        if not prompt:
-            self.img_status.config(text="Please enter a prompt.")
-            return
-
-        self.img_status.config(text="Generating... Please wait.")
-
+        if not prompt: return
+        self.img_status.config(text="Generating...")
+        
         def worker():
             try:
-                output_path = "generated_image.png"
-                path = self.img_gen.generate(prompt, save_path=output_path)
-                self.img_status.after(0, lambda: self.img_status.config(
-                    text=f"Image generated: {path}"
-                ))
+                path = self.img_gen.generate(prompt, save_path="generated_image.png")
+                self.img_status.after(0, lambda: self.img_status.config(text=f"Saved to: {path}"))
             except Exception as e:
-                self.img_status.after(0, lambda: self.img_status.config(
-                    text=f"Error: {e}"
-                ))
-
+                self.img_status.after(0, lambda: self.img_status.config(text=f"Error: {e}"))
+        
         threading.Thread(target=worker, daemon=True).start()
 
-
-
-    def ai_send_button(self):
-        text = self.ai_entry.get().strip()
-        if not text:
-            return
-
-        self._ai_append(f"[You] {text}")
-        self.ai_entry.delete(0, END)
-
-        # 异步防卡死
-        import threading
-        threading.Thread(
-            target=self._ai_call_and_display,
-            args=(text,),
-            daemon=True
-        ).start()
-
-
-    def _ai_append(self, msg):
-        """线程安全地往 AI 文本区域写入"""
-        def append():
-            self.ai_text.config(state=NORMAL)
-            self.ai_text.insert(END, msg + "\n")
-            self.ai_text.see(END)
-            self.ai_text.config(state=DISABLED)
-        self.ai_text.after(0, append)
-
-
-    def _ai_call_and_display(self, user_text):
-        try:
-            # ⭐ 每次对话前重置人格 System prompt
-            persona = self.persona_box.get()
-            self.chatbot.messages = [{"role": "system", "content": persona}]
-
-            reply = self.chatbot.chat(user_text)
-            self._ai_append(f"[TomAI] {reply}")
-
-        except Exception as e:
-            self._ai_append(f"[系统错误] Chatbot 调用失败: {e}")
-
-    
-    def goAhead_blocking_alternative(self):
-        """
-        (保留，不被使用) 如果将来需要短超时的同步方式，可以实现 select + 非阻塞 recv。
-        目前使用后台线程方式，因此不使用此函数。
-        """
-        pass
-
-    def wait_login_response(self, requested_name):
-        try:
-            raw = self.recv()
-        except Exception as e:
-            self.Window.after(0, lambda: self._on_login_failed(f"Network error: {e}"))
-            return
-
-        if not raw:
-            self.Window.after(0, lambda: self._on_login_failed("No response from server."))
-            return
-
-        try:
-            response = json.loads(raw)
-        except Exception as e:
-            self.Window.after(0, lambda: self._on_login_failed(f"Invalid response: {e}"))
-            return
-
-        status = response.get("status")
-
-        if status == "ok":
-            name = response.get("name", requested_name)
-            self.Window.after(0, lambda: self._on_login_success(name))
-
-        elif status == "wrong-password":
-            self.Window.after(0, lambda: self._on_login_failed("Wrong password."))
-
-        elif status == "duplicate":
-            self.Window.after(0, lambda: self._on_login_failed("User already logged in."))
-
-        else:
-            self.Window.after(0, lambda: self._on_login_failed(
-                f"Unknown login status: {status}"
-            ))
-
-
-    def _recv_peer_msg(self):
-        """安全接收一条原始消息（字符串），返回原始字符串或空串"""
-        read, _, _ = select.select([self.socket], [], [], 0)
-        if self.socket in read:
-            try:
-                raw = self.recv()
-                if not raw:
-                    return ""
-                return raw
-            except:
-                return ""
-        return ""
-    
-    def proc(self):
-        while True:
-            time.sleep(0.1)
-            peer_msg = self._recv_peer_msg() or ""  # 收原始字符串
-            if self.my_msg or peer_msg:
-                self.system_msg += self.sm.proc(self.my_msg, peer_msg)  # 全部交给状态机
-                self.my_msg = ""
-            if self.system_msg:
-                self.textCons.config(state=NORMAL)
-                self.textCons.insert(END, self.system_msg)
-                self.textCons.config(state=DISABLED)
-                self.textCons.see(END)
-                self.system_msg = ""
-
-    def run(self):
-        self.login()
-        self.Window.mainloop()
-# create a GUI class object
-if __name__ == "__main__": 
-    g = GUI()
+if __name__ == "__main__":
+    g = GUI(None, None, None, None, None)
+    g.run()

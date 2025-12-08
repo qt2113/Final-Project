@@ -149,7 +149,25 @@ class ClientSM:
                     # self.state = S_LOGGEDIN
                     # self.peer = ''
                     return self.out_msg
+                
+                elif my_msg == '/summary':
+                    mysend(self.s, json.dumps({"action":"summary"}))
+                    # 注意：这里不直接 recv，而是让主循环的 peer_msg 处理返回结果
+                    # 但原代码采用了同步等待 recv 的写法，为了保持一致性：
+                    summary_msg = json.loads(myrecv(self.s))["results"]
+                    self.out_msg += "\n===== 💬 Chat Summary =====\n"
+                    self.out_msg += summary_msg + "\n===========================\n\n"
+                    return self.out_msg
 
+                # [新增] Keywords 命令
+                elif my_msg == '/keywords':
+                    mysend(self.s, json.dumps({"action":"keywords"}))
+                    # 同步等待结果
+                    keywords_msg = json.loads(myrecv(self.s))["results"]
+                    self.out_msg += "\n===== 🔑 Chat Keywords =====\n"
+                    self.out_msg += keywords_msg + "\n==========================\n\n"
+                    return self.out_msg
+                
                 else:
                     mysend(self.s, json.dumps({"action":"exchange", "from":"[" + self.me + "]", "message":my_msg}))
                     self.out_msg += f"[{self.me}]: {my_msg}\n"
@@ -193,6 +211,14 @@ class ClientSM:
                         self.out_msg += f"{timestamp} {sender}: {content}\n"
                     self.out_msg += "===== 聊天记录结束 =====\n\n"                    
 
+                elif peer_msg["action"] == "summary":
+                    self.out_msg += "\n===== 💬 Chat Summary =====\n"
+                    self.out_msg += peer_msg["results"] + "\n===========================\n"
+                
+                elif peer_msg["action"] == "keywords":
+                    self.out_msg += "\n===== 🔑 Chat Keywords =====\n"
+                    self.out_msg += peer_msg["results"] + "\n==========================\n"
+                    
                 elif peer_msg["action"] == "disconnect":
                     self.out_msg += 'You are disconnected from ' + self.peer + '\n'
                     self.state = S_LOGGEDIN

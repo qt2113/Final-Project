@@ -10,7 +10,6 @@ from Chatbot_client import ChatBotClient
 class Client:
     def __init__(self, args):
         self.args = args
-        #可以选择本地部署的gemma3模型，也可以用上面的openai接口
         self.chatbot = ChatBotClientOpenAI(
                     name="TomAI",
                     host="http://10.209.93.21:8000/v1"   

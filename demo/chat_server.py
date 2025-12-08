@@ -17,7 +17,7 @@ import chat_group as grp
 from Chatbot_client import ChatBotClientOpenAI
 from server_actions import (
     handle_connect, handle_exchange, handle_ai_query,
-    handle_disconnect, handle_time, handle_list, handle_search, handle_add
+    handle_disconnect, handle_time, handle_list, handle_search, handle_add,handle_summary,handle_keywords
 )
 
 class AI:
@@ -42,6 +42,46 @@ class AI:
         except Exception as e:
             print("AI情绪分析失败:", e)
             return 'neutral'
+    def summarize_chat(self, chat_history):
+        """
+        使用 LLM 对聊天记录进行总结
+        """
+        if not chat_history:
+            return "没有足够的聊天记录生成总结。"
+            
+        prompt = "请对以下聊天记录进行简要总结，概括主要讨论内容:\n"
+        # 限制历史记录长度，防止 token 溢出
+        recent_history = chat_history[-20:] 
+        for entry in recent_history:
+            prompt += f"{entry['from']}: {entry['message']}\n"
+        prompt += "总结:"
+        
+        try:
+            summary = self.llm.chat(prompt)
+            return summary.strip()
+        except Exception as e:
+            print("AI总结失败:", e)
+            return "无法生成总结。"
+
+    def get_keywords(self, chat_history):
+        """
+        [新增] 使用 LLM 提取聊天记录关键词
+        """
+        if not chat_history:
+            return "无记录"
+            
+        prompt = "请从以下聊天记录中提取 3-5 个最重要的关键词或话题标签，用逗号分隔:\n"
+        recent_history = chat_history[-20:]
+        for entry in recent_history:
+            prompt += f"{entry['from']}: {entry['message']}\n"
+        prompt += "关键词:"
+        
+        try:
+            keywords = self.llm.chat(prompt)
+            return keywords.strip()
+        except Exception as e:
+            print("AI关键词提取失败:", e)
+            return "无法提取关键词。"
 
 class Server:
     def __init__(self):
@@ -72,6 +112,8 @@ class Server:
             "list": handle_list,
             "search": handle_search,
             "add": handle_add,
+            "summary": handle_summary,
+            "keywords": handle_keywords
             }
 
 

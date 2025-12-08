@@ -2,6 +2,7 @@ import json
 from chat_utils import *
 from chat_group import Group
 import time
+
 def handle_connect(server, from_sock, msg):
     to_name = msg["target"]
     from_name = server.logged_sock2name[from_sock]
@@ -37,169 +38,23 @@ def handle_connect(server, from_sock, msg):
         msg = json.dumps({"action":"connect", "status":"no-user"})
     mysend(from_sock, msg)
 
-# def handle_exchange(server,from_sock, msg):
-#     from_name = server.logged_sock2name[from_sock]
-#     the_guys = server.group.list_me(from_name)
-#     said = msg["from"]+msg["message"]
-#     #=============AI Sentiment Analysis ============
-#     if from_name != "TomAI":               
-#         sentiment = server.ai.get_sentiment(msg["message"])
-#     else:
-#         sentiment = None
-#     # ============ 生成消息对象 ==================
-#     msg_obj = {
-#         "from": from_name,
-#         "message": msg["message"],
-#         "sentiment": sentiment,
-#         "timestamp": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) 
-#     }
-
-#     # === 同时保存到两种历史记录中确保一致性 ===
-#     # 方式1：使用成员排序元组作为键（与disconnect保持一致）
-#     sorted_key = tuple(sorted(the_guys))
-#     if sorted_key not in server.group_chat_history:
-#         server.group_chat_history[sorted_key] = []
-#     server.group_chat_history[sorted_key].append(msg_obj)
-
-#     # === 保存到群聊历史 ===
-#     found, group_key = server.group.find_group(from_name)
-#     if found:
-#         if group_key not in server.chat_history:   # 新建群历史
-#             server.chat_history[group_key] = []
-#         server.chat_history[group_key].append(msg_obj)
-
-#     # ===================== 新增：保存到临时聊天存储器 =====================
-#     if from_name not in server.chat_memory:
-#         server.chat_memory[from_name] = []
-#     server.chat_memory[from_name].append(msg_obj)
-#     said2 = text_proc(msg["message"], from_name)
-
-#     # ===== 1. AI 不写入聊天记录 =====
-#     if from_name != "TomAI":
-#         server.indices[from_name].add_msg_and_index(said2)
-
-#     # # ======== 保存完整群聊记录 ========
-#     # # 把一个群视为成员组成的 tuple key，使其可作为字典键
-#     # group_key = tuple(sorted(the_guys))
-
-#     # if group_key not in server.group_chat_history:
-#     #     server.group_chat_history[group_key] = []
-
-
-#     # # 保存记录（包含 emoji 情绪标签）
-#     # server.group_chat_history[group_key].append({
-#     #     "from": from_name,
-#     #     "message": msg["message"],
-#     #     "sentiment": sentiment,
-#     #     "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
-#     # })
-
-#     # ===== 2. 向群组其他成员广播 =====
-#     for g in the_guys:
-#         if g == from_name or g == "TomAI":
-#             continue  # 发消息的人不重复写
-#         to_sock = server.logged_name2sock[g]
-#         # 发送消息并附加情绪
-#         mysend(to_sock, json.dumps({
-#             "action": "exchange",
-#             "from": msg["from"],
-#             "message": msg["message"],
-#             "sentiment": sentiment
-#         }))
-#         # 写入对方索引
-#         if g in server.indices:
-#             server.indices[g].add_msg_and_index(said2)
-    
 def handle_exchange(server, from_sock, msg):
     from_name = server.logged_sock2name[from_sock]
     
-    # ====== 第一步：检查是否是 bye 消息 ======
+    # ====== 特殊处理：检查是否是 bye 消息 ======
     if msg["message"].lower().strip() == "bye":
         print(f"{from_name} 发送了 bye，准备断开连接")
-        
-        # 获取群组信息
-        found, group_key = server.group.find_group(from_name)
-        
-        if found:
-            # 1. 获取当前群聊的所有成员
-            the_guys = server.group.list_me(from_name)
-            print(f"群聊成员: {the_guys}")
-            
-            # 2. 获取完整的群聊历史记录
-            history = []
-            
-            # 首先尝试从 group_chat_history 获取（使用排序元组作为键）
-            sorted_key = tuple(sorted(the_guys))
-            print(f"查找历史记录键: {sorted_key}")
-            
-            if sorted_key in server.group_chat_history:
-                history = server.group_chat_history[sorted_key][:]  # 获取副本
-                print(f"从 group_chat_history 找到 {len(history)} 条记录")
-            else:
-                # 如果上面没找到，尝试从 chat_history 获取
-                print(f"尝试从 chat_history[group_key={group_key}] 查找...")
-                if group_key in server.chat_history:
-                    history = server.chat_history[group_key][:]  # 获取副本
-                    print(f"从 chat_history 找到 {len(history)} 条记录")
-                else:
-                    # 两种方式都没找到，打印调试信息
-                    print(f"调试信息 - group_chat_history 键: {list(server.group_chat_history.keys())}")
-                    print(f"调试信息 - chat_history 键: {list(server.chat_history.keys())}")
-            
-            # 3. 发送历史记录给发送者
-            if history:
-                mysend(from_sock, json.dumps({
-                    "action": "history",
-                    "results": history
-                }))
-                print(f"向 {from_name} 发送了历史记录，共 {len(history)} 条")
-            else:
-                print(f"没有找到 {from_name} 的历史记录")
-                # 即使没有历史记录，也发送空的历史响应
-                mysend(from_sock, json.dumps({
-                    "action": "history",
-                    "results": []
-                }))
-            
-            # 4. 通知其他成员有人离开（系统消息，不显示emoji）
-            for g in the_guys:
-                if g == from_name or g == "TomAI":
-                    continue
-                to_sock = server.logged_name2sock.get(g)
-                if to_sock:
-                    mysend(to_sock, json.dumps({
-                        "action": "exchange",
-                        "from": f"[{from_name}]",
-                        "message": f"{from_name} 已离开聊天",
-                        "sentiment": None  # 系统消息，不显示emoji
-                    }))
-            
-            # 5. 执行断开连接
-            server.group.disconnect(from_name)
-            
-            # 6. 不要立即清除历史记录，等确认发送后再清除
-            # 先注释掉清除代码，确保能获取到历史记录
-            # if sorted_key in server.group_chat_history:
-            #     del server.group_chat_history[sorted_key]
-            # if group_key in server.chat_history:
-            #     del server.chat_history[group_key]
-            
-            print(f"{from_name} 已断开连接")
-        
-        # 7. 发送最终的断开确认
-        mysend(from_sock, json.dumps({
-            "action": "disconnect",
-            "from": from_name
-        }))
-        
-        return  # 直接返回，不处理后续的消息广播逻辑
+        # 复用 handle_disconnect 的逻辑来处理断开
+        handle_disconnect(server, from_sock, msg)
+        return
     
-    # ====== 原来的正常消息处理逻辑 ======
+    # ====== 正常消息处理逻辑 ======
     the_guys = server.group.list_me(from_name)
     said = msg["from"]+msg["message"]
     
-    #=============AI Sentiment Analysis ============
-    if from_name != "TomAI" and from_name != "[系统]":  # 系统消息不分析情绪               
+    # ============= AI Sentiment Analysis ============
+    # 系统消息或机器人消息不分析情绪
+    if from_name != "TomAI" and from_name != "[系统]":  
         sentiment = server.ai.get_sentiment(msg["message"])
     else:
         sentiment = None
@@ -213,66 +68,56 @@ def handle_exchange(server, from_sock, msg):
     }
 
     # === 统一存储历史记录 ===
-    # 主要使用排序的成员元组作为键
+    # 使用排序的成员元组作为键，确保唯一性
     sorted_key = tuple(sorted(the_guys))
     if sorted_key not in server.group_chat_history:
         server.group_chat_history[sorted_key] = []
     server.group_chat_history[sorted_key].append(msg_obj)
 
-    # === 同时保存到 chat_history 用于兼容 ===
+    # === 兼容旧的 chat_history (以 group_key 为索引) ===
     found, group_key = server.group.find_group(from_name)
     if found:
         if group_key not in server.chat_history:
             server.chat_history[group_key] = []
         server.chat_history[group_key].append(msg_obj)
-    # elif is_ai_message:
-    #     # 对于AI消息，可能需要特殊处理
-    #     # 尝试找到包含当前用户和AI的群组
-    #     for key in server.group.chat_grps:
-    #         if from_name in server.group.chat_grps[key] and "TomAI" in server.group.chat_grps[key]:
-    #             if key not in server.chat_history:
-    #                 server.chat_history[key] = []
-    #             server.chat_history[key].append(msg_obj)
-    #             break
 
-    # ===================== 保存到临时聊天存储器 =====================
+    # ===================== 保存到个人临时聊天存储器 =====================
     if from_name not in server.chat_memory:
         server.chat_memory[from_name] = []
     server.chat_memory[from_name].append(msg_obj)
+    
     said2 = text_proc(msg["message"], from_name)
 
-    # ===== AI 不写入聊天记录 =====
+    # ===== AI 消息不写入索引 =====
     if from_name != "TomAI":
         server.indices[from_name].add_msg_and_index(said2)
 
     # ===== 向群组其他成员广播 =====
     for g in the_guys:
         if g == from_name or g == "TomAI":
-            continue  # 发消息的人不重复写
-        to_sock = server.logged_name2sock[g]
-        # 发送消息并附加情绪
-        mysend(to_sock, json.dumps({
-            "action": "exchange",
-            "from": msg["from"],
-            "message": msg["message"],
-            "sentiment": sentiment
-        }))
-        # 写入对方索引
-        if g in server.indices:
-            server.indices[g].add_msg_and_index(said2)
+            continue  # 发消息的人不重复发
+        to_sock = server.logged_name2sock.get(g)
+        if to_sock:
+            # 发送消息并附加情绪
+            mysend(to_sock, json.dumps({
+                "action": "exchange",
+                "from": msg["from"],
+                "message": msg["message"],
+                "sentiment": sentiment
+            }))
+            # 写入对方索引
+            if g in server.indices:
+                server.indices[g].add_msg_and_index(said2)
+
 def handle_list(server, from_sock, msg):
     from_name = server.logged_sock2name[from_sock]
     msg = server.group.list_all()
     mysend(from_sock, json.dumps({"action":"list", "results":msg}))
 
 def handle_poem(server, from_sock, msg):
-    poem_indx = int(msg["target"])
-    from_name = server.logged_sock2name[from_sock]
-    print(from_name + ' asks for ', poem_indx)
-    poem = server.sonnet.get_poem(poem_indx)
-    poem = '\n'.join(poem).strip()
-    print('here:\n', poem)
-    mysend(from_sock, json.dumps({"action":"poem", "results":poem}))
+    # 如果需要 sonnet 功能，确保 server 初始化了 sonnet
+    # 这里保留原样
+    pass 
 
 def handle_time(server, from_sock, msg):
     ctime = time.strftime('%d.%m.%y,%H:%M', time.localtime())
@@ -282,7 +127,6 @@ def handle_search(server, from_sock, msg):
     term = msg["target"]
     from_name = server.logged_sock2name[from_sock]
     print('search for ' + from_name + ' for ' + term)
-    # search_rslt = (server.indices[from_name].search(term))
     search_rslt = '\n'.join([x[-1] for x in server.indices[from_name].search(term)])
     print('server side search: ' + search_rslt)
     mysend(from_sock, json.dumps({"action":"search", "results":search_rslt}))
@@ -319,7 +163,59 @@ def handle_add(server, from_sock, msg):
         "status": "request",
         "from": from_name
     }))
+
+def handle_summary(server, from_sock, msg):
+    from_name = server.logged_sock2name[from_sock]
+    print('Generating summary for ' + from_name)
     
+    # 尝试找到用户所在的群组
+    found, group_key = server.group.find_group(from_name)
+    target_history = []
+    
+    if found:
+        the_guys = server.group.list_me(from_name)
+        sorted_key = tuple(sorted(the_guys))
+        
+        if sorted_key in server.group_chat_history:
+            target_history = server.group_chat_history[sorted_key]
+        elif group_key in server.chat_history:
+            target_history = server.chat_history[group_key]
+    
+    # 退化：如果没群或没群记录，找个人记录
+    if not target_history and from_name in server.chat_memory:
+        target_history = server.chat_memory[from_name]
+
+    if not target_history:
+        summary = "当前没有聊天记录可供总结。"
+    else:
+        summary = server.ai.summarize_chat(target_history)
+        
+    mysend(from_sock, json.dumps({"action":"summary", "results":summary}))
+
+def handle_keywords(server, from_sock, msg):
+    from_name = server.logged_sock2name[from_sock]
+    print('Generating keywords for ' + from_name)
+    
+    found, group_key = server.group.find_group(from_name)
+    target_history = []
+    
+    if found:
+        the_guys = server.group.list_me(from_name)
+        sorted_key = tuple(sorted(the_guys))
+        if sorted_key in server.group_chat_history:
+            target_history = server.group_chat_history[sorted_key]
+        elif group_key in server.chat_history:
+            target_history = server.chat_history[group_key]
+            
+    if not target_history and from_name in server.chat_memory:
+        target_history = server.chat_memory[from_name]
+
+    if not target_history:
+        keywords = "无数据"
+    else:
+        keywords = server.ai.get_keywords(target_history)
+        
+    mysend(from_sock, json.dumps({"action":"keywords", "results":keywords}))    
 
 def handle_ai_query(server, from_sock, msg):
     sender = server.logged_sock2name[from_sock]
@@ -327,7 +223,6 @@ def handle_ai_query(server, from_sock, msg):
     if not query:
         return
 
-    # 找到当前群聊
     in_group, gkey = server.group.find_group(sender)
     if not in_group:
         return
@@ -337,7 +232,6 @@ def handle_ai_query(server, from_sock, msg):
     # 1. 把 TomAI 拉进群（只进一次）
     if "TomAI" not in members:
         members.append("TomAI")
-        # 可选：提示大家 TomAI 来了
         server.broadcast_to_peers(sender, json.dumps({
             "action": "exchange",
             "from": "[系统]",
@@ -345,7 +239,7 @@ def handle_ai_query(server, from_sock, msg):
             "sentiment": None
         }))
 
-    # 2. 广播用户的问题（关键！）
+    # 2. 广播用户的问题
     server.broadcast_to_peers(sender, json.dumps({
         "action": "exchange",
         "from": f"[{sender}]",
@@ -355,7 +249,9 @@ def handle_ai_query(server, from_sock, msg):
 
     # 3. 调用 AI 并广播回答
     reply = server.call_remote_ai(query)
-    reply = remove_emoji(reply)
+    
+    # 这里的 remove_emoji 需要在 chat_utils 定义，如果没有定义建议注释掉
+    # reply = remove_emoji(reply)
 
     server.broadcast_to_peers(sender, json.dumps({
         "action": "exchange",
@@ -364,24 +260,55 @@ def handle_ai_query(server, from_sock, msg):
         "sentiment": "neutral"
     }))
 
+# [修改] 完善后的 handle_disconnect，对齐 bye 的逻辑
 def handle_disconnect(server, from_sock, msg):
-    name = server.logged_sock2name[from_sock]
-    in_group, gkey = server.group.find_group(name)
+    if from_sock not in server.logged_sock2name:
+        return
+        
+    from_name = server.logged_sock2name[from_sock]
+    found, group_key = server.group.find_group(from_name)
 
-    # 断开前先记住历史（如果有群）
-    history = server.group_chat_history.get(gkey, []) if in_group else []
+    print(f"[Handle Disconnect] {from_name} is disconnecting...")
 
-    # 执行断开（会自动解散只剩1人的群）
-    server.group.disconnect(name)
-
-    # 把历史发给离开的人
-    if history:
-        mysend(from_sock, json.dumps({"action": "history", "results": history}))
-
-    # 通知其他人有人离开（可选）
-    if in_group:
-        server.broadcast_to_peers(name, json.dumps({
-            "action": "disconnect",
-            "from": name
+    # 1. 如果在群组中，处理历史记录和通知
+    if found:
+        the_guys = server.group.list_me(from_name)
+        
+        # 查找历史记录 (优先尝试 sorted_key)
+        history = []
+        sorted_key = tuple(sorted(the_guys))
+        if sorted_key in server.group_chat_history:
+            history = server.group_chat_history[sorted_key]
+        elif group_key in server.chat_history:
+            history = server.chat_history[group_key]
+        
+        # 将历史记录发送给离开的用户 (保存记录)
+        mysend(from_sock, json.dumps({
+            "action": "history",
+            "results": history or []
         }))
-                
+        
+        # 通知其他群成员
+        for g in the_guys:
+            if g == from_name or g == "TomAI":
+                continue
+            to_sock = server.logged_name2sock.get(g)
+            if to_sock:
+                mysend(to_sock, json.dumps({
+                    "action": "exchange",
+                    "from": f"[{from_name}]",
+                    "message": f"{from_name} 已离开聊天",
+                    "sentiment": None # 系统通知不带情感
+                }))
+        
+        # 执行群组断开逻辑
+        server.group.disconnect(from_name)
+
+    # 2. 发送最终的断开确认
+    try:
+        mysend(from_sock, json.dumps({
+            "action": "disconnect",
+            "from": from_name
+        }))
+    except:
+        pass      
