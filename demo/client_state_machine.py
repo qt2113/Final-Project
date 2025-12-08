@@ -65,7 +65,6 @@ class ClientSM:
 # This is event handling instate "S_LOGGEDIN"
 #==============================================================================
         if self.state == S_LOGGEDIN:
-            # todo: can't deal with multiple lines yet
             if len(my_msg) > 0:
 
                 if my_msg == 'q':
@@ -152,19 +151,15 @@ class ClientSM:
                 
                 elif my_msg == '/summary':
                     mysend(self.s, json.dumps({"action":"summary"}))
-                    # 注意：这里不直接 recv，而是让主循环的 peer_msg 处理返回结果
-                    # 但原代码采用了同步等待 recv 的写法，为了保持一致性：
                     summary_msg = json.loads(myrecv(self.s))["results"]
                     self.out_msg += "\n===== 💬 Chat Summary =====\n"
                     self.out_msg += summary_msg + "\n===========================\n\n"
                     return self.out_msg
 
-                # [新增] Keywords 命令
                 elif my_msg == '/keywords':
                     mysend(self.s, json.dumps({"action":"keywords"}))
-                    # 同步等待结果
                     keywords_msg = json.loads(myrecv(self.s))["results"]
-                    self.out_msg += "\n===== 🔑 Chat Keywords =====\n"
+                    self.out_msg += "\n=====  Chat Keywords =====\n"
                     self.out_msg += keywords_msg + "\n==========================\n\n"
                     return self.out_msg
                 
@@ -180,7 +175,7 @@ class ClientSM:
                 if peer_msg["action"] == "connect" and peer_msg.get("status")=="request":
                     self.out_msg += f"({peer_msg['from']} joined the chat)\n"
 
-                # 普通聊天消息（群聊/单聊都适用）
+                # Handle group chat messages
                 elif peer_msg["action"] == "exchange":
                     sender = peer_msg.get("from")
                     content = peer_msg.get("message")
@@ -201,24 +196,23 @@ class ClientSM:
                 
                 elif peer_msg["action"] == "history":
                     history_list = peer_msg.get("results", [])
-                    self.out_msg += "\n===== 群聊历史记录 =====\n"
+                    self.out_msg += "\n===== Group Chat History =====\n"
                     for record in history_list:
                         sender = record.get("from")
                         content = record.get("message")
                         sentiment = record.get("sentiment", "neutral")
                         timestamp = record.get("timestamp")
-                        # 显示格式
                         self.out_msg += f"{timestamp} {sender}: {content}\n"
-                    self.out_msg += "===== 聊天记录结束 =====\n\n"                    
+                    self.out_msg += "===== The End =====\n\n"                    
 
                 elif peer_msg["action"] == "summary":
-                    self.out_msg += "\n===== 💬 Chat Summary =====\n"
+                    self.out_msg += "\n===== Chat Summary =====\n"
                     self.out_msg += peer_msg["results"] + "\n===========================\n"
                 
                 elif peer_msg["action"] == "keywords":
-                    self.out_msg += "\n===== 🔑 Chat Keywords =====\n"
+                    self.out_msg += "\n=====  Chat Keywords =====\n"
                     self.out_msg += peer_msg["results"] + "\n==========================\n"
-                    
+
                 elif peer_msg["action"] == "disconnect":
                     self.out_msg += 'You are disconnected from ' + self.peer + '\n'
                     self.state = S_LOGGEDIN

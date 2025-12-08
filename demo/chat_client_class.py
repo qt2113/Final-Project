@@ -5,7 +5,6 @@ import client_state_machine as csm
 from GUI import *
 from Chatbot_client import ChatBotClientOpenAI
 from Chatbot_client import ChatBotClient
-#你好
 
 class Client:
     def __init__(self, args):

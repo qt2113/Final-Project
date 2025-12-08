@@ -27,9 +27,9 @@ class AI:
     
     def get_sentiment(self, text):
         """
-        使用 LLM 分析情绪，返回 'positive', 'negative', 'neutral'
+        Use LLM to analyze sentiment of the text, return 'positive', 'negative', or 'neutral'  
         """
-        prompt = f"请判断这段话的情绪: {text}。只返回 positive/negative/neutral。"
+        prompt = f"Please judge the emotion of this sentence: {text}。ONLY return: positive/negative/neutral"
         try:
             resp = self.llm.chat(prompt)
             resp = resp.lower()
@@ -40,48 +40,47 @@ class AI:
             else:
                 return 'neutral'
         except Exception as e:
-            print("AI情绪分析失败:", e)
+            print("Failed to analyze the sentiment:", e)
             return 'neutral'
     def summarize_chat(self, chat_history):
         """
-        使用 LLM 对聊天记录进行总结
+        Use LLM to summarize the chat history
         """
         if not chat_history:
-            return "没有足够的聊天记录生成总结。"
+            return "No chat history available."
             
-        prompt = "请对以下聊天记录进行简要总结，概括主要讨论内容:\n"
-        # 限制历史记录长度，防止 token 溢出
+        prompt = "Please briefly summarize the main content of these chat history:\n"
         recent_history = chat_history[-20:] 
         for entry in recent_history:
             prompt += f"{entry['from']}: {entry['message']}\n"
-        prompt += "总结:"
+        prompt += "Summary:"
         
         try:
             summary = self.llm.chat(prompt)
             return summary.strip()
         except Exception as e:
-            print("AI总结失败:", e)
-            return "无法生成总结。"
+            print("Failed to summarize:", e)
+            return "Can't summarize the chat history."
 
     def get_keywords(self, chat_history):
         """
-        [新增] 使用 LLM 提取聊天记录关键词
+        Use LLM to extract keywords from chat history
         """
         if not chat_history:
-            return "无记录"
+            return "No chat history available."
             
-        prompt = "请从以下聊天记录中提取 3-5 个最重要的关键词或话题标签，用逗号分隔:\n"
+        prompt = "Please extract 3–5 of the most important keywords or hashtags from the following chat history, separated by commas:\n"
         recent_history = chat_history[-20:]
         for entry in recent_history:
             prompt += f"{entry['from']}: {entry['message']}\n"
-        prompt += "关键词:"
+        prompt += "Key words:"
         
         try:
             keywords = self.llm.chat(prompt)
             return keywords.strip()
         except Exception as e:
-            print("AI关键词提取失败:", e)
-            return "无法提取关键词。"
+            print("Failed to extract the key words", e)
+            return "Can't extract keywords from the chat history."
 
 class Server:
     def __init__(self):
@@ -99,8 +98,8 @@ class Server:
         #initialize past chat indices
         self.indices={}
         self.chat_history = {} 
-        self.ai = AI()  # 用于存放用户发送的聊天消息及情绪
-        self.group_chat_history = {}  # 记录每个群的聊天历史
+        self.ai = AI()  
+        self.group_chat_history = {} 
         self.chat_memory = {}
                 
         self.ACTION_MAP = {
@@ -110,18 +109,11 @@ class Server:
             "disconnect": handle_disconnect,
             "time": handle_time,
             "list": handle_list,
-            "search": handle_search,
             "add": handle_add,
             "summary": handle_summary,
             "keywords": handle_keywords
             }
 
-
-        # sonnet
-        # self.sonnet_f = open('AllSonnets.txt.idx', 'rb')
-        # self.sonnet = pkl.load(self.sonnet_f)
-        # self.sonnet_f.close()
-        #self.sonnet = indexer.PIndex("AllSonnets.txt")
         self.tom_ai = ChatBotClientOpenAI()   
         self.ai_name = "TomAI"
         self.logged_name2sock[self.ai_name] = None       
@@ -132,7 +124,7 @@ class Server:
             try:
                 return self.tom_ai.chat(query)
             except Exception as e:
-                return f"TomAI 暂时开小差了～ {e}"
+                return f"TomAI is temporarily unavailable{e}"
             
     def new_client(self, sock):
         #add to all sockets and to new clients
@@ -152,9 +144,8 @@ class Server:
                 return
 
             name = msg["name"].strip()
-            password_received = msg.get("password", "")  # 明文密码
+            password_received = msg.get("password", "")  
 
-            # 防止重复登录
             if self.group.is_member(name):
                 mysend(sock, json.dumps({"action": "login", "status": "duplicate"}))
                 return
@@ -165,7 +156,6 @@ class Server:
             self.logged_name2sock[name] = sock
             self.logged_sock2name[sock] = name
 
-            # 加载或创建用户索引
             if name not in self.indices:
                 try:
                     self.indices[name] = pkl.load(open(f"{name}.idx", "rb"))
@@ -174,21 +164,21 @@ class Server:
 
             user_idx = self.indices[name]
 
-            # === 密码处理逻辑 ===
+            # === Password Handling ===
             password_hash = getattr(user_idx, "password_hash", None)
 
             if password_hash:
-                # 老用户或已有密码：必须匹配
+                # Existing user: verify password
                 if not user_idx.check_password(password_received):
                     del self.logged_name2sock[name]
                     del self.logged_sock2name[sock]
                     mysend(sock, json.dumps({"action": "login", "status": "wrong-password"}))
                     return
             else:
-                # 新用户或老用户第一次登录：设置密码
+                # New user: set password
                 user_idx.set_password(password_received)
 
-            # 登录成功
+            # Login successfully
             print(f"{name} logged in")
             self.group.join(name)
             mysend(sock, json.dumps({"action": "login", "status": "ok", "name": name}))
@@ -219,25 +209,24 @@ class Server:
             return
         msg = json.loads(msg)
         if msg.get("action") == "login":
-            # 已经登录的 socket 不可能再发 login，直接忽略（防止误报）
             return
         action = msg.get("action")
         handler = self.ACTION_MAP.get(action)
         if handler:
-            handler(self, from_sock, msg)   # 直接调用
+            handler(self, from_sock, msg)   
         else:
-            print("未知 action:", action)
+            print("Unkown action:", action)
 
     def broadcast_to_peers(self, sender_name, msg_json_str):
         _, gkey = self.group.find_group(sender_name)
         if gkey not in self.group.chat_grps:
             return
         for name in self.group.chat_grps[gkey]:
-            if name == "TomAI":      # 只跳过机器人
+            if name == "TomAI":      
                 continue
             sock = self.logged_name2sock.get(name)
             if sock:
-                mysend(sock, msg_json_str)   # 包括 sender 自己！
+                mysend(sock, msg_json_str)   
 
 #==============================================================================
 # main loop, loops *forever*

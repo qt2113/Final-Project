@@ -13,13 +13,10 @@ SERVER = (CHAT_IP, CHAT_PORT)
 menu = "\n------ Choose one of the following commands ------\n \
         time: calendar time in the system\n \
         who: to find out who else are there\n \
-        @ _peer_: to connect to the _peer_ and chat\n \
-        ? _term_: to search your chat logs where _term_ appears\n \
-        p _#_: to get number <#> sonnet\n \
+        @ <peer>: to connect to the _peer_ and chat\n \
         @TomAI: to ask TomAI a question\n \
         /summary: to get summary of the chat history\n \
         /keywords: to get keywords of the chat history\n \
-        /aipic: to generate an image based on your description\n \
         bye: to leave the chat system\n\n"
 
 S_OFFLINE   = 0
@@ -82,12 +79,11 @@ def text_proc(text, user):
     return('(' + ctime + ') ' + user + ' : ' + text) # message goes directly to screen
 
 def remove_emoji(text):
-        # 匹配大部分emoji字符
         emoji_pattern = re.compile(
             "["
-            "\U0001F600-\U0001F64F"  # 表情符号
-            "\U0001F300-\U0001F5FF"  # 符号 &  pictographs
-            "\U0001F680-\U0001F6FF"  # 交通工具 & 符号
-            "\U0001F1E0-\U0001F1FF"  # 国旗
+            "\U0001F600-\U0001F64F"  # emojis
+            "\U0001F300-\U0001F5FF"  # symbols & pictographs
+            "\U0001F680-\U0001F6FF"  # transport & map symbols
+            "\U0001F1E0-\U0001F1FF"  # flags 
             "]+", flags=re.UNICODE)
         return emoji_pattern.sub(r'', text)

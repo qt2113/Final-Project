@@ -1,7 +1,10 @@
 from ollama import Client
 from openai import OpenAI
-
-
+"""
+You can choose to use either Ollama API or OpenAI-compatible API.
+Here we choose OpenAI API as default.
+"""
+# ChatBotClient using Ollama API
 class ChatBotClient():
 
     def __init__(self, name="3po", model="gemma3", host='http://localhost:11434', headers={'x-some-header': 'some-value'}):
@@ -39,7 +42,7 @@ class ChatBotClient():
             answer += piece
         self.messages.append({"role": "assistant", "content": answer})
 
-
+# ChatBotClient using OpenAI API
 class ChatBotClientOpenAI():
     def __init__(self, name="TomAI", host='http://10.209.93.21:8000/v1'):
         self.name = name
@@ -71,7 +74,7 @@ class ChatBotClientOpenAI():
             self.messages.append({"role": "assistant", "content": reply})
             return reply
         except Exception as e:
-            raise Exception(f"调用服务器失败: {e}")
+            raise Exception(f"Failed to call the server: {e}")
 
     def stream_chat(self, message: str):
         self.messages.append({"role": "user", "content": message})

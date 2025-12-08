@@ -8,7 +8,7 @@ import hashlib
 from chat_utils import * 
 from image_generator import ImageGenerator
 
-# ==== UI 配置常量 ====
+# ==== UI Styles ====
 FONT_BOLD = "Helvetica 10 bold"
 FONT_NORMAL = "Helvetica 12"
 COLOR_BG_DARK = "#17202A"      
@@ -38,7 +38,7 @@ class GUI:
         self.Window.mainloop()
 
     # =========================================================================
-    # 1. 登录逻辑 & 窗口
+    # 1. Login logic and handling
     # =========================================================================
     def login(self):
         self.login_win = Toplevel()
@@ -100,16 +100,14 @@ class GUI:
         self.sm.set_state(S_LOGGEDIN)
         self.sm.set_myname(self.name)
         
-        # 构建主窗口
         self._setup_main_window()
         
-        # 启动接收线程
         if not self.proc_thread or not self.proc_thread.is_alive():
             self.proc_thread = threading.Thread(target=self._proc_loop, daemon=True)
             self.proc_thread.start()
 
     # =========================================================================
-    # 2. 主聊天窗口构建
+    # 2. Main window layout
     # =========================================================================
     def _setup_main_window(self):
         self.Window.deiconify()
@@ -117,20 +115,18 @@ class GUI:
         self.Window.resizable(False, False)
         self.Window.configure(width=470, height=550, bg=COLOR_BG_DARK)
 
-        # 顶部标题
+        # Upper name display
         Label(self.Window, text=self.name, bg=COLOR_BG_DARK, fg=COLOR_TEXT_WHITE,
               font="Helvetica 13 bold", pady=5).place(relwidth=1)
         Label(self.Window, width=450, bg=COLOR_BG_LIGHT).place(relwidth=1, rely=0.07, relheight=0.012)
 
-        # 消息显示区
+        # Message display area
         self.textCons = Text(self.Window, width=20, height=2, bg=COLOR_BG_DARK, fg=COLOR_TEXT_WHITE,
                              font="Helvetica 14", padx=5, pady=5)
         self.textCons.place(relheight=0.745, relwidth=1, rely=0.08)
         
-        # [修改点] 这里初始化显示 Menu
         self.textCons.config(state=NORMAL)
         try:
-            # 尝试显示 chat_utils 中的 menu 字符串
             self.textCons.insert(END, menu + "\n\n")
         except NameError:
             self.textCons.insert(END, "Welcome to Chatroom!\n\n")
@@ -150,27 +146,27 @@ class GUI:
         self.entryMsg.bind("<Return>", lambda x: self.send_message())
 
         # ==== 按钮区域 ====
-        # 发送按钮
+        # Send Button
         self._create_btn(self.labelBottom, "Send", self.send_message, 
                          bg=COLOR_BTN_DEFAULT, x=0.77, y=0.008, w=0.22, h=0.06)
         
-        # 群聊按钮
+        
         self._create_btn(self.labelBottom, "Group Chat", lambda: self.send_command("connect", "ALL"),
                          bg="#6C3483", fg="white", x=0.77, y=0.08, w=0.22, h=0.05)
 
-        # Summary 按钮
+        # Summary 
         self._create_btn(self.labelBottom, "Summary", lambda: self.send_text_command("/summary"),
                          bg="#D35400", fg="white", font="Helvetica 9 bold", x=0.77, y=0.15, w=0.10, h=0.05)
 
-        # Keywords 按钮
+        # Keywords 
         self._create_btn(self.labelBottom, "Keywords", lambda: self.send_text_command("/keywords"),
                          bg="#27AE60", fg="white", font="Helvetica 9 bold", x=0.89, y=0.15, w=0.10, h=0.05)
 
-        # AI Chat 入口
+        # AI Chat 
         self._create_btn(self.Window, "AI Chat", self._open_ai_window,
                          bg="#2E86C1", fg="white", font="Helvetica 8 bold", x=0.75, y=0.02, w=0.13, h=0.05)
         
-        # Image Gen 入口
+        # Image Gen 
         self._create_btn(self.Window, "Image Gen", self._open_image_window,
                          bg="#117A65", fg="white", font="Helvetica 8 bold", x=0.87, y=0.02, w=0.13, h=0.05)
 
@@ -180,7 +176,7 @@ class GUI:
         return btn
 
     # =========================================================================
-    # 3. 消息发送与网络处理
+    # 3. Message sending and receiving
     # =========================================================================
     def send_message(self):
         msg = self.entryMsg.get()
@@ -221,7 +217,7 @@ class GUI:
                 self.system_msg = ""
 
     # =========================================================================
-    # 4. 子功能窗口 (AI & Image)
+    # 4. Sub windows: AI Chat and Image Generation
     # =========================================================================
     def _open_ai_window(self):
         if hasattr(self, "ai_win") and self.ai_win.winfo_exists():

@@ -116,15 +116,13 @@ class Group:
     def connect_all(self):
         """Create a single group containing ALL current members."""
         if len(self.members) <= 1:
-            return  # 无法群聊
+            return  
         
         self.grp_ever += 1
         group_key = self.grp_ever
 
-        # 创建一个 group：包含所有成员
         self.chat_grps[group_key] = list(self.members.keys())
 
-        # 更新所有人的状态为 S_TALKING
         for m in self.members:
             self.members[m] = S_TALKING
 
