@@ -12,6 +12,7 @@ def handle_connect(server, from_sock, msg):
         server.group.connect_all()
 
         for user, sock in server.logged_name2sock.items():
+            if sock is None: continue 
             mysend(sock, json.dumps({
                 "action": "connect",
                 "status": "group-created",
@@ -47,11 +48,11 @@ def handle_exchange(server, from_sock, msg):
         return
     
     the_guys = server.group.list_me(from_name)
-    said = msg["from"]+msg["message"]
+    said = msg["from"] + msg["message"]
     
     # ============= AI Sentiment Analysis ============
     if from_name != "TomAI" and from_name != "[System]":  
-        sentiment = server.ai.get_sentiment(msg["message"])
+        sentiment = server.sentiment_ai.get_sentiment(msg["message"])
     else:
         sentiment = None
     
@@ -118,7 +119,8 @@ def handle_search(server, from_sock, msg):
     term = msg["target"]
     from_name = server.logged_sock2name[from_sock]
     print('search for ' + from_name + ' for ' + term)
-    search_rslt = '\n'.join([x[-1] for x in server.indices[from_name].search(term)])
+    results = server.indices[from_name].search(term)
+    search_rslt = '\n'.join([x[-1] for x in results]) if results else ""
     print('server side search: ' + search_rslt)
     mysend(from_sock, json.dumps({"action":"search", "results":search_rslt}))
 
@@ -178,7 +180,7 @@ def handle_summary(server, from_sock, msg):
     if not target_history:
         summary = "No data available for summary."
     else:
-        summary = server.ai.summarize_chat(target_history)
+        summary = server.summary_ai.summarize_chat(target_history)
         
     mysend(from_sock, json.dumps({"action":"summary", "results":summary}))
 
@@ -203,7 +205,7 @@ def handle_keywords(server, from_sock, msg):
     if not target_history:
         keywords = "No data available for keywords."
     else:
-        keywords = server.ai.get_keywords(target_history)
+        keywords = server.keyword_ai.get_keywords(target_history)
         
     mysend(from_sock, json.dumps({"action":"keywords", "results":keywords}))    
 
@@ -237,7 +239,7 @@ def handle_ai_query(server, from_sock, msg):
         "sentiment": "neutral"
     }))
 
-    # 3. Get AI response
+    # 3. Get AI response (Calling the general chatbot instance)
     reply = server.call_remote_ai(query)
     
     # 4. Broadcast the AI response
@@ -297,4 +299,4 @@ def handle_disconnect(server, from_sock, msg):
             "from": from_name
         }))
     except:
-        pass      
+        pass

@@ -14,25 +14,30 @@ import json
 import pickle as pkl
 from chat_utils import *
 import chat_group as grp
-from Chatbot_client import ChatBotClientOpenAI
+
+from Chatbot_client import UnifiedChatClient
 from server_actions import (
     handle_connect, handle_exchange, handle_ai_query,
-    handle_disconnect, handle_time, handle_list, handle_search, handle_add,handle_summary,handle_keywords
+    handle_disconnect, handle_time, handle_list, handle_search, handle_add, handle_summary, handle_keywords
 )
 
-class AI:
+# ==============================================================================
+# AI Classes (Inheriting from UnifiedChatClient)
+# ==============================================================================
+
+class SentimentAI(UnifiedChatClient):
     def __init__(self):
-        from Chatbot_client import ChatBotClientOpenAI
-        self.llm = ChatBotClientOpenAI()
-    
+        super().__init__(name="SentimentBot")
+        self.system_prompt = {"role": "system", "content": "You are a sentiment analysis tool. You strictly analyze the emotion of the input text and return ONLY one word: positive, negative, or neutral."}
+        self.messages = [self.system_prompt]
+
     def get_sentiment(self, text):
-        """
-        Use LLM to analyze sentiment of the text, return 'positive', 'negative', or 'neutral'  
-        """
-        prompt = f"Please judge the emotion of this sentence: {text}。ONLY return: positive/negative/neutral"
+        self.messages = [self.system_prompt]
+        
+        prompt = f"Analyze the emotion of this sentence: '{text}'. Return ONLY: positive, negative, or neutral."
         try:
-            resp = self.llm.chat(prompt)
-            resp = resp.lower()
+            resp = self.chat(prompt)
+            resp = resp.lower().strip()
             if 'positive' in resp:
                 return 'positive'
             elif 'negative' in resp:
@@ -40,65 +45,80 @@ class AI:
             else:
                 return 'neutral'
         except Exception as e:
-            print("Failed to analyze the sentiment:", e)
+            print(f"[SentimentAI] Error: {e}")
             return 'neutral'
+
+class SummaryAI(UnifiedChatClient):
+    def __init__(self):
+        super().__init__(name="SummaryBot")
+        self.system_prompt = {"role": "system", "content": "You are a helpful assistant capable of summarizing conversation history concisely."}
+        self.messages = [self.system_prompt]
+
     def summarize_chat(self, chat_history):
-        """
-        Use LLM to summarize the chat history
-        """
         if not chat_history:
             return "No chat history available."
-            
-        prompt = "Please briefly summarize the main content of these chat history:\n"
-        recent_history = chat_history[-20:] 
+        
+        self.messages = [self.system_prompt]
+        
+        prompt = "Please briefly summarize the main content of these chat logs:\n"
+        recent_history = chat_history[-20:]
         for entry in recent_history:
             prompt += f"{entry['from']}: {entry['message']}\n"
-        prompt += "Summary:"
+        prompt += "\nSummary:"
         
         try:
-            summary = self.llm.chat(prompt)
+            summary = self.chat(prompt)
             return summary.strip()
         except Exception as e:
-            print("Failed to summarize:", e)
+            print(f"[SummaryAI] Error: {e}")
             return "Can't summarize the chat history."
 
+class KeywordAI(UnifiedChatClient):
+    def __init__(self):
+        super().__init__(name="KeywordBot")
+        self.system_prompt = {"role": "system", "content": "You are a keyword extraction tool."}
+        self.messages = [self.system_prompt]
+
     def get_keywords(self, chat_history):
-        """
-        Use LLM to extract keywords from chat history
-        """
         if not chat_history:
             return "No chat history available."
             
+        self.messages = [self.system_prompt]
+        
         prompt = "Please extract 3–5 of the most important keywords or hashtags from the following chat history, separated by commas:\n"
         recent_history = chat_history[-20:]
         for entry in recent_history:
             prompt += f"{entry['from']}: {entry['message']}\n"
-        prompt += "Key words:"
+        prompt += "\nKeywords:"
         
         try:
-            keywords = self.llm.chat(prompt)
+            keywords = self.chat(prompt)
             return keywords.strip()
         except Exception as e:
-            print("Failed to extract the key words", e)
+            print(f"[KeywordAI] Error: {e}")
             return "Can't extract keywords from the chat history."
+
+# ==============================================================================
+# Server Class
+# ==============================================================================
 
 class Server:
     def __init__(self):
-        self.new_clients = [] #list of new sockets of which the user id is not known
-        self.logged_name2sock = {} #dictionary mapping username to socket
-        self.logged_sock2name = {} # dict mapping socket to user name
+        self.new_clients = [] 
+        self.logged_name2sock = {} 
+        self.logged_sock2name = {} 
         self.all_sockets = []
         self.group = grp.Group()
-        #start server
-        self.server=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        # start server
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server.bind(SERVER)
         self.server.listen(5)
         self.all_sockets.append(self.server)
-        #initialize past chat indices
-        self.indices={}
+        
+        self.indices = {}
         self.chat_history = {} 
-        self.ai = AI()  
         self.group_chat_history = {} 
         self.chat_memory = {}
                 
@@ -112,22 +132,27 @@ class Server:
             "add": handle_add,
             "summary": handle_summary,
             "keywords": handle_keywords
-            }
+        }
 
-        self.tom_ai = ChatBotClientOpenAI()   
+        # === AI Modules Initialization ===
+        self.sentiment_ai = SentimentAI()
+        self.summary_ai = SummaryAI()
+        self.keyword_ai = KeywordAI()
+
+        self.tom_ai = UnifiedChatClient(name="TomAI")   
         self.ai_name = "TomAI"
+        
         self.logged_name2sock[self.ai_name] = None       
         self.logged_sock2name[None] = self.ai_name      
         print("TomAI has joined the chat system.")
 
     def call_remote_ai(self, query):
-            try:
-                return self.tom_ai.chat(query)
-            except Exception as e:
-                return f"TomAI is temporarily unavailable{e}"
+        try:
+            return self.tom_ai.chat(query)
+        except Exception as e:
+            return f"TomAI is temporarily unavailable: {e}"
             
     def new_client(self, sock):
-        #add to all sockets and to new clients
         print('new client...')
         sock.setblocking(0)
         self.new_clients.append(sock)
@@ -164,21 +189,15 @@ class Server:
 
             user_idx = self.indices[name]
 
-            # === Password Handling ===
-            password_hash = getattr(user_idx, "password_hash", None)
-
-            if password_hash:
-                # Existing user: verify password
+            if getattr(user_idx, "password_hash", None):
                 if not user_idx.check_password(password_received):
                     del self.logged_name2sock[name]
                     del self.logged_sock2name[sock]
                     mysend(sock, json.dumps({"action": "login", "status": "wrong-password"}))
                     return
             else:
-                # New user: set password
                 user_idx.set_password(password_received)
 
-            # Login successfully
             print(f"{name} logged in")
             self.group.join(name)
             mysend(sock, json.dumps({"action": "login", "status": "ok", "name": name}))
@@ -186,10 +205,7 @@ class Server:
         except Exception as e:
             print("login exception:", e)
 
-    
-
     def logout(self, sock):
-        #remove sock from all lists
         name = self.logged_sock2name[sock]
         pkl.dump(self.indices[name], open(name + '.idx','wb'))
         del self.indices[name]
@@ -199,9 +215,6 @@ class Server:
         self.group.leave(name)
         sock.close()
 
-#==============================================================================
-# main command switchboard
-#==============================================================================
     def handle_msg(self, from_sock):
         msg = myrecv(from_sock)
         if not msg:
@@ -215,7 +228,7 @@ class Server:
         if handler:
             handler(self, from_sock, msg)   
         else:
-            print("Unkown action:", action)
+            print("Unknown action:", action)
 
     def broadcast_to_peers(self, sender_name, msg_json_str):
         _, gkey = self.group.find_group(sender_name)
@@ -228,33 +241,23 @@ class Server:
             if sock:
                 mysend(sock, msg_json_str)   
 
-#==============================================================================
-# main loop, loops *forever*
-#==============================================================================
     def run(self):
         print ('starting server...')
         while(1):
-           read,write,error=select.select(self.all_sockets,[],[])
-           print('checking logged clients..')
+           read, write, error = select.select(self.all_sockets, [], [])
            for logc in list(self.logged_name2sock.values()):
                if logc in read:
                    self.handle_msg(logc)
-           print('checking new clients..')
            for newc in self.new_clients[:]:
                if newc in read:
                    self.login(newc)
-           print('checking for new connections..')
            if self.server in read :
-               #new client request
-               sock, address=self.server.accept()
+               sock, address = self.server.accept()
                self.new_client(sock)
 
-
-
-
-
 def main():
-    server=Server()
+    server = Server()
     server.run()
 
-main()
+if __name__ == "__main__":
+    main()
