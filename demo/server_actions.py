@@ -250,6 +250,39 @@ def handle_ai_query(server, from_sock, msg):
         "sentiment": "neutral"
     }))
 
+    # 5. Save TomAI's response to chat history
+    # Get the list of group members (including TomAI)
+    the_guys = server.group.list_me(sender)
+    
+    # Create message object for TomAI's response
+    ai_msg_obj = {
+        "from": "[TomAI]",
+        "message": reply,
+        "sentiment": "neutral",
+        "timestamp": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) 
+    }
+    
+    # Save to group chat history
+    sorted_key = tuple(sorted(the_guys))
+    if sorted_key not in server.group_chat_history:
+        server.group_chat_history[sorted_key] = []
+    server.group_chat_history[sorted_key].append(ai_msg_obj)
+    
+    # Save to chat_history (by group_key)
+    if gkey not in server.chat_history:
+        server.chat_history[gkey] = []
+    server.chat_history[gkey].append(ai_msg_obj)
+    
+    # Save to TomAI's chat memory
+    if "TomAI" not in server.chat_memory:
+        server.chat_memory["TomAI"] = []
+    server.chat_memory["TomAI"].append(ai_msg_obj)
+    
+    # Also save to the sender's chat memory
+    if sender not in server.chat_memory:
+        server.chat_memory[sender] = []
+    server.chat_memory[sender].append(ai_msg_obj)
+
 def handle_disconnect(server, from_sock, msg):
     if from_sock not in server.logged_sock2name:
         return

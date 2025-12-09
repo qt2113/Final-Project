@@ -6,7 +6,8 @@ import copy
 # 1. Local Ollama Client 
 # ==============================================================================
 class ChatBotClient:
-    def __init__(self, name="3po", model="gemma3", host='http://localhost:11434', headers={'x-some-header': 'some-value'}):
+    def __init__(self, name="3po", model="gemma3", host='http://localhost:11434',
+                  headers={'x-some-header': 'some-value'}):
         self.host = host
         self.name = name
         self.model = model
