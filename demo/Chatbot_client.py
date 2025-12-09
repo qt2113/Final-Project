@@ -49,20 +49,16 @@ class ChatBotClientOpenAI:
 # 3. Unified Client: Changes between Remote and Local
 # ==============================================================================
 class UnifiedChatClient:
-    """
-    Server and Client can use this class to chat with either a remote LLM (OpenAI) or a local LLM (Ollama).
-    It will try to use the remote LLM first; if it fails (e.g., network issues), it will switch to the local LLM automatically.
-    """
+    GLOBAL_BACKUP_MODE = False 
+
     def __init__(self, name="TomAI"):
         self.name = name
-        self.primary = ChatBotClientOpenAI(name=name)      
+        self.primary = ChatBotClientOpenAI(name=name)       
         self.secondary = ChatBotClient(name=name, model='gemma3') 
-        self.using_backup = False  
-    
-    # --- Property to sync messages between primary and secondary ---
+        
     @property
     def messages(self):
-        if self.using_backup:
+        if UnifiedChatClient.GLOBAL_BACKUP_MODE:
             return self.secondary.messages
         return self.primary.messages
 
@@ -72,18 +68,19 @@ class UnifiedChatClient:
         self.secondary.messages = copy.deepcopy(value)
 
     def chat(self, message: str):
-        if self.using_backup:
+        if UnifiedChatClient.GLOBAL_BACKUP_MODE:
             return self.secondary.chat(message)
         
+        # try primary first
         try:
             return self.primary.chat(message)
         except Exception as e:
-            print(f"\n[Warning] Remote AI Failed: {e}")
-            print(f"[System] Switching to Local LLM ({self.secondary.model})...\n")
+            print(f"\n[Warning] Remote AI Failed for {self.name}: {e}")
+            print(f"[System] Global Failover Triggered. Switching ALL AI to Local LLM...\n")
             
-            self.using_backup = True
+            UnifiedChatClient.GLOBAL_BACKUP_MODE = True
             
-            # === chat history sync ===            
+            # sync history to secondary
             current_hist = self.primary.messages
             if current_hist and current_hist[-1].get('role') == 'user' and current_hist[-1].get('content') == message:
                 sync_hist = current_hist[:-1]
@@ -92,4 +89,5 @@ class UnifiedChatClient:
             
             self.secondary.messages = copy.deepcopy(sync_hist)
             
+            # finally use secondary
             return self.secondary.chat(message)
