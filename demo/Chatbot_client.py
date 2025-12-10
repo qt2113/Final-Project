@@ -25,26 +25,33 @@ class ChatBotClient:
 # 2. Remote OpenAI Client 
 # ==============================================================================
 class ChatBotClientOpenAI:
-    def __init__(self, name="AI", model="gemma2:2b", host="http://10.209.93.21:8000/v1"):
+    def __init__(self, name="AI",
+                 model="/home/nlp/.cache/modelscope/hub/models/Qwen/Qwen3-VL-8B-Instruct-FP8",
+                 host="http://10.208.2.89:8000/v1"):
+
         self.client = OpenAI(api_key="EMPTY", base_url=host)
+
         self.model_id = model
-        self.messages = []
+        self.messages = []     
+        self.name = name
 
     def chat(self, message: str):
         self.messages.append({"role": "user", "content": message})
+
         try:
             response = self.client.chat.completions.create(
                 model=self.model_id,
                 messages=self.messages,
                 temperature=0.7,
-                max_tokens=500
             )
+
             reply = response.choices[0].message.content.strip()
+
             self.messages.append({"role": "assistant", "content": reply})
             return reply
-        except Exception as e:
-            raise Exception(f"OpenAI Connection Error: {e}")
 
+        except Exception as e:
+            raise Exception(f"Remote AI connection error: {e}")
 # ==============================================================================
 # 3. Unified Client: Changes between Remote and Local
 # ==============================================================================
